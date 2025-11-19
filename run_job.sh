@@ -1,128 +1,103 @@
 #!/bin/bash
 
 # ==============================================================
-# Script de Ejecución Generalizado - NuestraMemorIA
-# ==============================================================
-# Este script es portable: funciona en Linux (CUDA), Mac (MPS) y CPU.
-# Requisitos: 'uv' debe estar instalado previamente por el usuario.
+# Script de Ejecución 
 # ==============================================================
 
-SESSION_NAME="transcripcion_ia"
+# --- [ 1. ZONA DE CONFIGURACIÓN ] ---
+# Ajusta estos valores según tu entorno y preferencias.
+
+# GPU Preferida (Solo aplica en Linux/Nvidia)
+# ID 3 = RTX 3090 | IDs 0,1,2 = RTX 2080 Ti
+TARGET_DEVICE_INDEX=3
+
+# Rutas (Pueden ser relativas o absolutas)
+INPUT_PATH="audio_transcription/inputs/audios/test_audios"
+OUTPUT_PATH="audio_transcription/outputs/transcripciones"
+
+# Parámetros del Modelo
+BATCH_SIZE=16           # Bajar a 8 si usas las 2080 Ti
+LANGUAGE="es"
+ASR_MODEL="large-v3"
+COMPUTE_TYPE="int8"
+
+SESSION_NAME="whisper_auto_job"
+
+# --- [ FIN DE CONFIGURACIÓN ] ---
+
 SCRIPT_PATH="audio_transcription/scripts/transcribe_whisperx.py"
-
-# Colores
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 CYAN='\033[0;36m'
 RED='\033[0;31m'
 NC='\033[0m'
 
-echo -e "${CYAN}--- NuestraMemorIA Launcher ---${NC}"
+echo -e "${CYAN}--- Launcher NuestraMemorIA (Auto-Validated) ---${NC}"
 
-# 1. Verificación de prerrequisitos (Sin instalar nada)
-if ! command -v uv &> /dev/null; then
-    echo -e "${RED}Error crítico: 'uv' no está instalado o no está en el PATH.${NC}"
-    echo "Por favor, instálalo (sin sudo) ejecutando: curl -LsSf https://astral.sh/uv/install.sh | sh"
-    exit 1
-fi
+# 1. Verificaciones Básicas
+if ! command -v uv &> /dev/null; then echo -e "${RED}Error: Falta 'uv'.${NC}"; exit 1; fi
+if ! command -v tmux &> /dev/null; then echo -e "${RED}Error: Falta 'tmux'.${NC}"; exit 1; fi
 
-if ! command -v tmux &> /dev/null; then
-    echo -e "${RED}Error crítico: 'tmux' no está instalado.${NC}"
-    echo "Este script requiere tmux para dejar el proceso corriendo en segundo plano."
-    exit 1
-fi
-
-# 2. Configuración del Entorno (Python 3.11 estricto)
-echo -e "${YELLOW}[Entorno] Asegurando Python 3.11...${NC}"
-uv python pin 3.11
-if [ $? -ne 0 ]; then
-    echo -e "${RED}Error: No se pudo anclar la versión de Python 3.11.${NC}"
-    exit 1
-fi
-
-echo -e "${YELLOW}[Entorno] Sincronizando dependencias...${NC}"
+# 2. Preparar Entorno
+echo -e "${YELLOW}[System] Verificando entorno...${NC}"
+uv python pin 3.11 > /dev/null 2>&1
 uv sync --quiet
-echo -e "${GREEN}[Entorno] Listo.${NC}"
 
-# 3. Detección de Hardware vía Python (Portable)
-# Ejecutamos un pequeño snippet de Python para que torch nos diga qué hay realmente.
-echo ""
-echo "Detectando hardware disponible..."
+# 3. EL "CEREBRO": Validación de Hardware
+# Usamos Python para ver qué hay realmente en la máquina y validar tu TARGET_DEVICE_INDEX
+echo -e "${YELLOW}[System] Validando hardware disponible...${NC}"
 
-# Este script python interno genera la lista de opciones
-DETECT_SCRIPT="
+VALIDATION_SCRIPT="
 import torch
 import sys
 
-if torch.cuda.is_available():
-    count = torch.cuda.device_count()
-    print(f'DETECTED:CUDA:{count}')
-    for i in range(count):
-        name = torch.cuda.get_device_name(i)
-        # Imprimimos: INDICE | NOMBRE
-        print(f'{i}|{name}')
-elif torch.backends.mps.is_available():
-    print('DETECTED:MPS:1')
-else:
-    print('DETECTED:CPU:1')
+try:
+    target = int(sys.argv[1])
+    if torch.cuda.is_available():
+        count = torch.cuda.device_count()
+        if target >= count:
+            print(f'ERROR:GPU_NOT_FOUND:Solo hay {count} GPUs (0-{count-1}). Solicitaste {target}.')
+            sys.exit(1)
+        gpu_name = torch.cuda.get_device_name(target)
+        print(f'OK:CUDA:{target}:{gpu_name}')
+    elif torch.backends.mps.is_available():
+        print('WARN:MPS:0:Apple Silicon Detectado (Ignorando índice Nvidia)')
+    else:
+        print('WARN:CPU:0:Sin aceleración detectada')
+except Exception as e:
+    print(f'ERROR:UNKNOWN:{e}')
+    sys.exit(1)
 "
 
-# Capturamos la salida
-HW_INFO=$(uv run python -c "$DETECT_SCRIPT")
-MODE=$(echo "$HW_INFO" | grep "DETECTED" | cut -d':' -f2)
+# Ejecutamos la validación pasándole tu configuración
+CHECK_RESULT=$(uv run python -c "$VALIDATION_SCRIPT" "$TARGET_DEVICE_INDEX")
+STATUS=$(echo "$CHECK_RESULT" | cut -d':' -f1)
+TYPE=$(echo "$CHECK_RESULT" | cut -d':' -f2)
+FINAL_INDEX=$(echo "$CHECK_RESULT" | cut -d':' -f3)
+MSG=$(echo "$CHECK_RESULT" | cut -d':' -f4)
 
-# 4. Lógica de Selección según Hardware
-GPU_ID=0
-BATCH_DEFAULT=8
-
-if [ "$MODE" == "CUDA" ]; then
-    echo -e "${GREEN}-> Sistema NVIDIA CUDA detectado.${NC}"
-    echo "Selecciona la GPU para este trabajo:"
-    echo "-------------------------------------"
-    
-    # Mostrar opciones
-    echo "$HW_INFO" | grep -v "DETECTED" | while IFS='|' read -r id name; do
-        echo "  [$id] $name"
-    done
-    echo "-------------------------------------"
-    read -p "Ingresa el ID de la GPU a usar [0]: " GPU_ID
-    GPU_ID=${GPU_ID:-0} # Default a 0 si está vacío
-    
-    # Preguntar Batch Size (útil si eliges la 3090 vs la 2080)
-    read -p "Tamaño del Batch (Recomendado: 8 para 11GB VRAM, 16 para 24GB) [8]: " BATCH_SIZE
-    BATCH_SIZE=${BATCH_SIZE:-8}
-
-elif [ "$MODE" == "MPS" ]; then
-    echo -e "${GREEN}-> Sistema Apple Silicon (Mac M-Series) detectado.${NC}"
-    echo "Usando aceleración Metal Performance Shaders (MPS)."
-    GPU_ID=0 # Irrelevante en MPS, pero el script lo pide
-    
-    read -p "Tamaño del Batch (Recomendado: 4 para Mac Air) [4]: " BATCH_SIZE
-    BATCH_SIZE=${BATCH_SIZE:-4}
-
-else
-    echo -e "${YELLOW}-> No se detectó acelerador. Usando CPU.${NC}"
-    echo "Advertencia: Esto será lento."
-    GPU_ID=0
-    BATCH_SIZE=1
-fi
-
-# 5. Solicitar Rutas
-echo ""
-read -p "Ruta de entrada (archivo o carpeta): " INPUT_PATH
-if [ -z "$INPUT_PATH" ]; then
-    echo -e "${RED}Error: Debes especificar una ruta de entrada.${NC}"
+if [ "$STATUS" == "ERROR" ]; then
+    echo -e "${RED}Error de Configuración:${NC} $MSG"
+    echo "Por favor edita el archivo run_job.sh y corrige el TARGET_DEVICE_INDEX."
     exit 1
+elif [ "$STATUS" == "WARN" ]; then
+    echo -e "${YELLOW}Aviso de Hardware:${NC} $MSG"
+    echo "Se usará el dispositivo disponible automáticamente."
+else
+    echo -e "${GREEN}Hardware Validado:${NC} Usando GPU $FINAL_INDEX ($MSG)"
 fi
 
-read -p "Ruta de salida [audio_transcription/outputs/transcripciones]: " OUTPUT_PATH
-OUTPUT_PATH=${OUTPUT_PATH:-audio_transcription/outputs/transcripciones}
+# 4. Construir Comando Final
+CMD="uv run python $SCRIPT_PATH \"$INPUT_PATH\" \
+    --output_dir \"$OUTPUT_PATH\" \
+    --device_index $FINAL_INDEX \
+    --batch_size $BATCH_SIZE \
+    --language $LANGUAGE \
+    --asr_model $ASR_MODEL \
+    --compute_type $COMPUTE_TYPE"
 
-# 6. Lanzamiento en TMUX
-CMD="uv run python $SCRIPT_PATH \"$INPUT_PATH\" --output_dir \"$OUTPUT_PATH\" --device_index $GPU_ID --batch_size $BATCH_SIZE"
-
-echo ""
-echo -e "${YELLOW}[Lanzador] Iniciando sesión tmux: $SESSION_NAME...${NC}"
+# 5. Ejecución en TMUX
+echo -e "${YELLOW}[Job] Lanzando tarea en segundo plano ($SESSION_NAME)...${NC}"
 
 tmux has-session -t $SESSION_NAME 2>/dev/null
 if [ $? != 0 ]; then
@@ -131,13 +106,14 @@ else
     tmux new-window -t $SESSION_NAME
 fi
 
-# Enviamos el comando + un comando read para que la terminal no se cierre al terminar y puedas ver el log
-tmux send-keys -t $SESSION_NAME "$CMD; echo ''; echo '--- PROCESO FINALIZADO (Presiona Enter para cerrar) ---'; read" C-m
+# Enviamos el comando
+tmux send-keys -t $SESSION_NAME "$CMD; echo ''; echo '--- FINALIZADO (Presiona Enter para cerrar) ---'; read" C-m
 
-echo -e "${CYAN}=========================================================${NC}"
-echo -e "${GREEN} Tarea enviada exitosamente a segundo plano.${NC}"
-echo -e " Modo: $MODE | Disp: $GPU_ID | Batch: $BATCH_SIZE"
-echo -e "${CYAN}=========================================================${NC}"
-echo " -> Para ver el progreso:   tmux attach -t $SESSION_NAME"
-echo " -> Para salir (detach):    Ctrl+B, luego D"
-echo ""
+echo -e "${CYAN}================================================${NC}"
+echo -e "${GREEN}¡Proceso corriendo exitosamente!${NC}"
+echo -e " -> GPU Usada: $FINAL_INDEX ($TYPE)"
+echo -e " -> Input:     $INPUT_PATH"
+echo -e "------------------------------------------------"
+echo -e "Monitor:  tmux attach -t $SESSION_NAME"
+echo -e "Salir:    Ctrl+B, luego D"
+echo -e "${CYAN}================================================${NC}"
