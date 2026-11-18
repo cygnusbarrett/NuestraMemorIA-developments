@@ -1,0 +1,8 @@
+#!/bin/sh
+. "$(dirname "$0")/marcas.sh"
+
+if grep -v '^#' "$1" | grep -iqE "$MARCAS_MENSAJE"; then
+  echo "commit-msg: el mensaje tiene trailers o marcas de IA (AGENTS.md, 'Cero marcas de IA'):" >&2
+  grep -v '^#' "$1" | grep -inE "$MARCAS_MENSAJE" >&2
+  exit 1
+fi

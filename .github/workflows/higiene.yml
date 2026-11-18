@@ -1,0 +1,43 @@
+name: Higiene del repositorio
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  secretos:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  marcas-ia:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Mensajes de commit sin marcas de IA
+        env:
+          BASE: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}
+          HEAD: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+        run: |
+          . .githooks/marcas.sh
+          if [ -z "$BASE" ] || [ "$BASE" = "0000000000000000000000000000000000000000" ]; then
+            rango="$HEAD"
+            limite="-n 50"
+          else
+            rango="$BASE..$HEAD"
+            limite=""
+          fi
+          if git log $limite --format='%H%n%B' "$rango" | grep -inE "$MARCAS_MENSAJE"; then
+            echo "::error::Hay commits con trailers o marcas de IA (ver AGENTS.md)."
+            exit 1
+          fi

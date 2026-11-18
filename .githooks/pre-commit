@@ -1,0 +1,20 @@
+#!/bin/sh
+. "$(dirname "$0")/marcas.sh"
+
+if ! command -v gitleaks >/dev/null 2>&1; then
+  echo "pre-commit: falta gitleaks (brew install gitleaks); commit cancelado." >&2
+  exit 1
+fi
+gitleaks git --pre-commit --staged --redact --no-banner || {
+  echo "pre-commit: gitleaks encontró posibles secretos; commit cancelado." >&2
+  exit 1
+}
+
+# Las reglas de AGENTS.md citan los patrones, por eso se excluyen .md y los hooks.
+encontradas=$(git diff --cached -U0 --diff-filter=AM -- . ':!*.md' ':!.githooks/*' ':!.github/workflows/*' \
+  | grep '^+' | grep -v '^+++' | grep -inE "$MARCAS_CODIGO")
+if [ -n "$encontradas" ]; then
+  echo "pre-commit: marcas de IA en el código (AGENTS.md, 'Cero marcas de IA'):" >&2
+  echo "$encontradas" >&2
+  exit 1
+fi
