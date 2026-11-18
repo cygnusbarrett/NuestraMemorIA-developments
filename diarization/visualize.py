@@ -32,6 +32,10 @@ MEL_FMIN = 50.0
 MEL_FMAX = 8000.0
 N_FFT = 4096
 SPEC_BANDS = 256
+SPEC_CMAP = "gray"
+F0_POINT_SIZE = 10
+F0_EDGECOLORS = "black"
+F0_LINEWIDTHS = 0.3
 URI_CODE = re.compile(r"ev\d{2,}")
 
 
@@ -216,7 +220,7 @@ def draw(path, waveform, sample_rate, t0, hypothesis, reference, times, hz, labe
             spec_ax = fig.add_subplot(111)
             stripe_ax = None
         spec_ax.pcolormesh(
-            spec_times, frequencies, spec, shading="nearest", cmap="magma", rasterized=True,
+            spec_times, frequencies, spec, shading="nearest", cmap=SPEC_CMAP, rasterized=True,
         )
         spec_ax.set_yscale("log")
         spec_ax.set_ylim(MEL_FMIN, min(MEL_FMAX, sample_rate / 2))
@@ -226,7 +230,8 @@ def draw(path, waveform, sample_rate, t0, hypothesis, reference, times, hz, labe
             spec_ax.scatter(
                 times[voiced], hz[voiced],
                 c=[colors[label] for label, keep in zip(labels, voiced) if keep],
-                s=6, linewidths=0, rasterized=True, zorder=3,
+                s=F0_POINT_SIZE, edgecolors=F0_EDGECOLORS, linewidths=F0_LINEWIDTHS,
+                rasterized=True, zorder=3,
             )
         if URI_CODE.fullmatch(hypothesis.uri or ""):
             spec_ax.set_title(hypothesis.uri)
@@ -292,7 +297,7 @@ def draw_video_images(directory, waveform, sample_rate, t0, hypothesis, referenc
     try:
         ax = fig.add_axes([0, 0.34, 1, 0.64])
         ax.pcolormesh(spec_times, frequencies, spec,
-                      shading="nearest", cmap="magma", rasterized=True)
+                      shading="nearest", cmap=SPEC_CMAP, rasterized=True)
         ax.set_yscale("log")
         ax.set_ylim(MEL_FMIN, min(MEL_FMAX, sample_rate / 2))
         ax.set_xlim(t0, t0 + duration)
@@ -301,7 +306,8 @@ def draw_video_images(directory, waveform, sample_rate, t0, hypothesis, referenc
         if voiced.any():
             ax.scatter(times[voiced], hz[voiced],
                        c=[colors[label] for label, keep in zip(labels, voiced) if keep],
-                       s=6, linewidths=0, rasterized=True)
+                       s=F0_POINT_SIZE, edgecolors=F0_EDGECOLORS, linewidths=F0_LINEWIDTHS,
+                       rasterized=True)
         stripes = fig.add_axes([0, 0.08, 1, 0.23])
         for index, name in enumerate(rows):
             is_ref = reference is not None and index == len(rows) - 1

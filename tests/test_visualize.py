@@ -11,7 +11,17 @@ import pytest
 from pyannote.core import Annotation, Segment
 
 from diarization.rttm import write_rttm
-from diarization.visualize import crop_position, disagreement_spans, load_mono, render, spectrogram
+from diarization.visualize import (
+    F0_EDGECOLORS,
+    F0_LINEWIDTHS,
+    F0_POINT_SIZE,
+    SPEC_CMAP,
+    crop_position,
+    disagreement_spans,
+    load_mono,
+    render,
+    spectrogram,
+)
 
 PNG = b"\x89PNG\r\n\x1a\n"
 
@@ -174,3 +184,47 @@ def test_spectrogram_no_empty_log_bands(tmp_path):
     assert spec.shape[0] <= 256
     # Bandas vacías quedaban enteras en el piso de top_db (−80 dB).
     assert not np.any(np.all(np.isclose(spec, floor, atol=1e-5), axis=1))
+
+
+def test_f0_contrast_over_gray_spectrogram(tmp_path, monkeypatch):
+    assert SPEC_CMAP != "magma"
+    assert SPEC_CMAP == "gray"
+    assert F0_EDGECOLORS == "black"
+    assert F0_LINEWIDTHS > 0
+    assert F0_POINT_SIZE >= 10
+
+    captured = {"cmaps": [], "scatters": []}
+    import matplotlib.pyplot as plt
+
+    original_pcolormesh = plt.Axes.pcolormesh
+    original_scatter = plt.Axes.scatter
+
+    def capture_pcolormesh(self, *args, **kwargs):
+        captured["cmaps"].append(kwargs.get("cmap"))
+        return original_pcolormesh(self, *args, **kwargs)
+
+    def capture_scatter(self, *args, **kwargs):
+        captured["scatters"].append(kwargs)
+        return original_scatter(self, *args, **kwargs)
+
+    monkeypatch.setattr(plt.Axes, "pcolormesh", capture_pcolormesh)
+    monkeypatch.setattr(plt.Axes, "scatter", capture_scatter)
+
+    audio, hyp, ref, png = (
+        tmp_path / "tono.wav",
+        tmp_path / "hyp.rttm",
+        tmp_path / "ref.rttm",
+        tmp_path / "tono.png",
+    )
+    write_tone(audio)
+    write_spans(hyp, [(0.5, 2.5, "SPEAKER_00")])
+    write_spans(ref, [(0.5, 1.5, "SPEAKER_00"), (1.5, 2.5, "SPEAKER_01")])
+    render(audio, hyp, png, ref=ref)
+    assert png.read_bytes()[:8] == PNG
+    assert captured["cmaps"]
+    assert all(cmap == SPEC_CMAP and cmap != "magma" for cmap in captured["cmaps"])
+    assert captured["scatters"]
+    for kwargs in captured["scatters"]:
+        assert kwargs.get("edgecolors") == F0_EDGECOLORS
+        assert kwargs.get("linewidths") == F0_LINEWIDTHS
+        assert kwargs.get("s") == F0_POINT_SIZE

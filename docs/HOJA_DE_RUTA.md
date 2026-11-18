@@ -18,7 +18,7 @@
 | 5 | Hablantes enrolados | sin iniciar |
 | 6 | Integración al pipeline | sin iniciar |
 
-**Siguiente paso:** tarea 2.5 (ejecutor); en paralelo, primera ronda de la 2.6 (conductor) tras commit y push.
+**Siguiente paso:** tarea 2.5 (ejecutor); ronda 1 de la 2.6 en curso (conductor).
 
 Casillas: `[ ]` pendiente, `[~]` implementada y en revisión, `[x]` cerrada.
 Todas las tareas de agente se implementan con el prompt A y se revisan con el
