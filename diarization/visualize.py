@@ -1,4 +1,4 @@
-"""Dibuja espectrograma log-mel, F0 y franjas de hablante."""
+"""Dibuja espectrograma, F0 y franjas de hablante."""
 
 import argparse
 import ast
@@ -16,19 +16,22 @@ os.makedirs(_MPLCONFIG, exist_ok=True)
 os.environ.setdefault("MPLCONFIGDIR", _MPLCONFIG)
 os.environ.setdefault("MPLBACKEND", "Agg")
 
+import librosa  # noqa: E402
 import numpy as np  # noqa: E402
 import imageio_ffmpeg  # noqa: E402
 import torchaudio  # noqa: E402
 from pyannote.core import Segment  # noqa: E402
 
+from diarization.compare import compare_annotations  # noqa: E402
 from diarization.rttm import read_rttm  # noqa: E402
 
-F0_LOW = 60
-F0_HIGH = 400
+F0_LOW = 50
+F0_HIGH = 500
 FRAME_TIME = 0.01
-MEL_FMIN = 20.0  # el eje logarítmico no admite 0 Hz
+MEL_FMIN = 50.0
 MEL_FMAX = 8000.0
-N_MELS = 128
+N_FFT = 4096
+SPEC_BANDS = 256
 URI_CODE = re.compile(r"ev\d{2,}")
 
 
@@ -100,52 +103,69 @@ def color_map(labels, palette):
     }
 
 
-def pitch_series(waveform, sample_rate, tracks, offset):
-    freq = torchaudio.functional.detect_pitch_frequency(
-        waveform, sample_rate, frame_time=FRAME_TIME, freq_low=F0_LOW, freq_high=F0_HIGH,
-    ).squeeze(0)
-    frame_size = math.ceil(sample_rate * FRAME_TIME)
-    count = int(freq.shape[-1])
-    times = offset + (np.arange(count) + 0.5) * frame_size / sample_rate
-    hz = np.full(count, np.nan, dtype=np.float64)
-    labels = [None] * count
-    values = freq.detach().cpu().numpy()
+def pitch_series(waveform, sample_rate, tracks, offset, fmin=F0_LOW, fmax=F0_HIGH):
+    hop = max(1, round(sample_rate * 0.02))
+    values, voiced, _ = librosa.pyin(
+        waveform.squeeze(0).detach().cpu().numpy(), fmin=fmin, fmax=fmax,
+        sr=sample_rate, hop_length=hop,
+    )
+    times = offset + librosa.frames_to_time(np.arange(len(values)), sr=sample_rate, hop_length=hop)
+    hz = np.full(len(values), np.nan)
+    labels = [None] * len(values)
     limit = offset + waveform.shape[-1] / sample_rate
     for index, time in enumerate(times):
-        if time >= limit:
-            continue
         active = speakers_at(tracks, float(time))
-        if len(active) != 1:
-            continue
-        value = float(values[index])
-        if math.isfinite(value) and F0_LOW <= value <= F0_HIGH:
-            hz[index] = value
+        if time < limit and voiced[index] and len(active) == 1 and np.isfinite(values[index]):
+            hz[index] = values[index]
             labels[index] = next(iter(active))
     return times, hz, labels
 
 
-def disagreement_spans(hypothesis, reference, t0, t1, step=FRAME_TIME):
-    if t1 <= t0:
-        return []
-    hyp = tracks_of(hypothesis)
-    ref = tracks_of(reference)
-    spans = []
-    start = None
-    index = 0
-    while True:
-        time = t0 + index * step
-        if time >= t1:
-            break
-        mismatch = speakers_at(hyp, time) != speakers_at(ref, time)
-        if mismatch and start is None:
-            start = time
-        elif not mismatch and start is not None:
-            spans.append((start, time - start))
-            start = None
-        index += 1
-    if start is not None:
-        spans.append((start, t1 - start))
-    return spans
+def disagreement_spans(hypothesis, reference, t0, t1):
+    intervals = compare_annotations(hypothesis, reference, max_intervals=None)["tramos"]
+    return [(max(item["inicio"], t0), min(item["fin"], t1) - max(item["inicio"], t0))
+            for item in intervals if item["fin"] > t0 and item["inicio"] < t1]
+
+
+def spectrogram(waveform, sample_rate, t0, n_bands=SPEC_BANDS):
+    hop = max(1, round(sample_rate * FRAME_TIME))
+    samples = waveform.squeeze(0).detach().cpu().numpy().astype(np.float32, copy=False)
+    spectrum = np.abs(librosa.stft(samples, n_fft=N_FFT, hop_length=hop))
+    frequencies = librosa.fft_frequencies(sr=sample_rate, n_fft=N_FFT)
+    f_max = min(MEL_FMAX, sample_rate / 2.0)
+    selected = (frequencies >= MEL_FMIN) & (frequencies <= f_max)
+    magnitude = spectrum[selected]
+    del spectrum
+    freqs = frequencies[selected]
+    bands = max(1, min(int(n_bands), magnitude.shape[0]))
+    edges = np.geomspace(MEL_FMIN, f_max, bands + 1)
+    band_mags = np.zeros((bands, magnitude.shape[1]), dtype=np.float32)
+    band_freqs = np.empty(bands, dtype=np.float64)
+    empty = []
+    for index in range(bands):
+        if index + 1 == bands:
+            mask = (freqs >= edges[index]) & (freqs <= edges[index + 1])
+        else:
+            mask = (freqs >= edges[index]) & (freqs < edges[index + 1])
+        band_freqs[index] = math.sqrt(edges[index] * edges[index + 1])
+        if mask.any():
+            band_mags[index] = magnitude[mask].mean(axis=0)
+        else:
+            empty.append(index)
+    if empty:
+        # Bandas sin bins STFT: magnitud en el centro log, cuadro a cuadro.
+        centers = band_freqs[np.asarray(empty, dtype=int)]
+        right = np.clip(np.searchsorted(freqs, centers, side="left"), 1, len(freqs) - 1)
+        left = right - 1
+        span = freqs[right] - freqs[left]
+        weight = np.where(span > 0, (centers - freqs[left]) / span, 0.0)
+        band_mags[empty] = (
+            (1.0 - weight)[:, None] * magnitude[left] + weight[:, None] * magnitude[right]
+        ).astype(np.float32, copy=False)
+    del magnitude
+    spec = librosa.amplitude_to_db(band_mags, ref=np.max, top_db=80)
+    times = t0 + librosa.frames_to_time(np.arange(spec.shape[1]), sr=sample_rate, hop_length=hop)
+    return times, band_freqs, spec
 
 
 def _pyplot():
@@ -155,16 +175,6 @@ def _pyplot():
     import matplotlib.pyplot as plt
 
     return plt
-
-
-def mel_edges(n_mels, f_min, f_max):
-    def hz_to_mel(hz):
-        return 2595.0 * np.log10(1.0 + np.asarray(hz, dtype=np.float64) / 700.0)
-
-    def mel_to_hz(mel):
-        return 700.0 * (10.0 ** (np.asarray(mel, dtype=np.float64) / 2595.0) - 1.0)
-
-    return mel_to_hz(np.linspace(hz_to_mel(f_min), hz_to_mel(f_max), n_mels + 1))
 
 
 def _spans(tracks, label, t0, t1):
@@ -178,21 +188,11 @@ def _spans(tracks, label, t0, t1):
     return spans
 
 
-def draw(path, waveform, sample_rate, t0, hypothesis, reference, times, hz, labels):
+def draw(path, waveform, sample_rate, t0, hypothesis, reference, times, hz, labels,
+         spec_data, ref_label="referencia"):
     plt = _pyplot()
-    hop = max(1, int(round(sample_rate * FRAME_TIME)))
-    mel = torchaudio.transforms.MelSpectrogram(
-        sample_rate=sample_rate, n_fft=1024, hop_length=hop, f_min=MEL_FMIN, f_max=MEL_FMAX,
-        n_mels=N_MELS, power=2.0, center=True, mel_scale="htk",
-    )
-    decibels = torchaudio.transforms.AmplitudeToDB(stype="power", top_db=80)(mel(waveform)).squeeze(0)
-    spec = decibels.detach().cpu().numpy()
+    spec_times, frequencies, spec = spec_data
     t1 = t0 + waveform.shape[-1] / sample_rate
-    frame_count = spec.shape[-1]
-    time_edges = t0 + (np.arange(frame_count + 1) - 0.5) * hop / sample_rate
-    time_edges[0] = t0
-    time_edges[-1] = t1
-    freq_edges = mel_edges(spec.shape[0], MEL_FMIN, MEL_FMAX)
 
     hyp_tracks = tracks_of(hypothesis)
     ref_tracks = tracks_of(reference) if reference is not None else []
@@ -203,7 +203,7 @@ def draw(path, waveform, sample_rate, t0, hypothesis, reference, times, hz, labe
     colors = color_map(order, speaker_palette())
     rows = list(label_order(hyp_tracks))
     if reference is not None:
-        rows.append("referencia")
+        rows.append(ref_label)
     width = min(16.0, max(8.0, (t1 - t0) / 15.0))
     height = 4.4 + 0.42 * max(len(rows), 1)
     fig = plt.figure(figsize=(width, height), layout="constrained")
@@ -216,10 +216,10 @@ def draw(path, waveform, sample_rate, t0, hypothesis, reference, times, hz, labe
             spec_ax = fig.add_subplot(111)
             stripe_ax = None
         spec_ax.pcolormesh(
-            time_edges, freq_edges, spec, shading="flat", cmap="magma", rasterized=True,
+            spec_times, frequencies, spec, shading="nearest", cmap="magma", rasterized=True,
         )
         spec_ax.set_yscale("log")
-        spec_ax.set_ylim(MEL_FMIN, MEL_FMAX)
+        spec_ax.set_ylim(MEL_FMIN, min(MEL_FMAX, sample_rate / 2))
         spec_ax.set_ylabel("Hz")
         voiced = np.isfinite(hz)
         if voiced.any():
@@ -236,7 +236,7 @@ def draw(path, waveform, sample_rate, t0, hypothesis, reference, times, hz, labe
         else:
             spec_ax.tick_params(labelbottom=False)
             for index, name in enumerate(rows):
-                if name == "referencia":
+                if reference is not None and index == len(rows) - 1:
                     for label in label_order(ref_tracks):
                         spans = _spans(ref_tracks, label, t0, t1)
                         if spans:
@@ -276,33 +276,25 @@ def crop_position(time, px_per_s):
 
 
 def draw_video_images(directory, waveform, sample_rate, t0, hypothesis, reference,
-                      times, hz, labels, px_per_s):
+                      times, hz, labels, px_per_s, spec_data, ref_label="referencia"):
     plt = _pyplot()
     duration = waveform.shape[-1] / sample_rate
     width = max(1, math.ceil(duration * px_per_s))
-    hop = max(1, round(sample_rate * FRAME_TIME))
-    mel = torchaudio.transforms.MelSpectrogram(
-        sample_rate=sample_rate, n_fft=1024, hop_length=hop, f_min=MEL_FMIN,
-        f_max=MEL_FMAX, n_mels=N_MELS, power=2.0, center=True, mel_scale="htk",
-    )
-    spec = torchaudio.transforms.AmplitudeToDB(stype="power", top_db=80)(mel(waveform))
-    spec = spec.squeeze(0).detach().cpu().numpy()
-    time_edges = t0 + (np.arange(spec.shape[-1] + 1) - 0.5) * hop / sample_rate
-    time_edges[0], time_edges[-1] = t0, t0 + duration
+    spec_times, frequencies, spec = spec_data
     hyp_tracks = tracks_of(hypothesis)
     ref_tracks = tracks_of(reference) if reference is not None else []
     rows = label_order(hyp_tracks)
     order = rows + [name for name in label_order(ref_tracks) if name not in rows]
     colors = color_map(order, speaker_palette())
     if reference is not None:
-        rows = rows + ["referencia"]
+        rows = rows + [ref_label]
     fig = plt.figure(figsize=(width / 100, 7.2), dpi=100, facecolor="black")
     try:
         ax = fig.add_axes([0, 0.34, 1, 0.64])
-        ax.pcolormesh(time_edges, mel_edges(N_MELS, MEL_FMIN, MEL_FMAX), spec,
-                      shading="flat", cmap="magma", rasterized=True)
+        ax.pcolormesh(spec_times, frequencies, spec,
+                      shading="nearest", cmap="magma", rasterized=True)
         ax.set_yscale("log")
-        ax.set_ylim(MEL_FMIN, MEL_FMAX)
+        ax.set_ylim(MEL_FMIN, min(MEL_FMAX, sample_rate / 2))
         ax.set_xlim(t0, t0 + duration)
         ax.set_axis_off()
         voiced = np.isfinite(hz)
@@ -312,28 +304,33 @@ def draw_video_images(directory, waveform, sample_rate, t0, hypothesis, referenc
                        s=6, linewidths=0, rasterized=True)
         stripes = fig.add_axes([0, 0.08, 1, 0.23])
         for index, name in enumerate(rows):
-            tracks = ref_tracks if name == "referencia" else hyp_tracks
-            names = label_order(tracks) if name == "referencia" else [name]
+            is_ref = reference is not None and index == len(rows) - 1
+            tracks = ref_tracks if is_ref else hyp_tracks
+            names = label_order(tracks) if is_ref else [name]
             for label in names:
                 stripes.broken_barh(_spans(tracks, label, t0, t0 + duration),
                                     (index + 0.15, 0.7), facecolors=colors[label])
-            if name == "referencia":
+            if reference is not None and index == len(rows) - 1:
                 stripes.broken_barh(disagreement_spans(hypothesis, reference, t0, t0 + duration),
                                     (index + 0.15, 0.7), facecolors="red")
         stripes.set_xlim(t0, t0 + duration)
         stripes.set_ylim(max(len(rows), 1), 0)
         stripes.set_axis_off()
         for second in range(math.ceil(t0 / 5) * 5, math.ceil(t0 + duration), 5):
-            fig.text((second - t0) / duration, 0.025,
-                     f"{second // 60:02d}:{second % 60:02d}", color="white", fontsize=10)
+            x = (second - t0) / duration
+            fig.add_artist(plt.Line2D([x, x], [0.055, 0.075], transform=fig.transFigure, color="white"))
+            fig.text(x, 0.025, f"{second // 60:02d}:{second % 60:02d}",
+                     color="white", fontsize=10, ha="center")
         fig.savefig(directory / "content.png", dpi=100, facecolor="black")
     finally:
         plt.close(fig)
 
     side = plt.figure(figsize=(2, 7.2), dpi=100, facecolor="black")
     try:
-        for frequency in (20, 60, 100, 200, 400, 1000, 2000, 4000, 8000):
-            y = 0.34 + 0.64 * math.log(frequency / MEL_FMIN) / math.log(MEL_FMAX / MEL_FMIN)
+        for frequency in (50, 60, 100, 200, 400, 1000, 2000, 4000, 8000):
+            if frequency > sample_rate / 2:
+                continue
+            y = 0.34 + 0.64 * math.log(frequency / MEL_FMIN) / math.log(min(MEL_FMAX, sample_rate / 2) / MEL_FMIN)
             side.text(0.95, y, f"{frequency} Hz", color="white", ha="right", va="center", fontsize=9)
         for index, name in enumerate(rows):
             y = 0.31 - 0.23 * (index + 0.5) / max(len(rows), 1)
@@ -344,21 +341,22 @@ def draw_video_images(directory, waveform, sample_rate, t0, hypothesis, referenc
 
 
 def render_video(audio, target, waveform, sample_rate, t0, hypothesis, reference,
-                 times, hz, labels, window=20, px_per_s=100, fps=30):
+                 times, hz, labels, spec_data, window=20, px_per_s=100, fps=30,
+                 force=False, ref_label="referencia"):
     if not all(math.isfinite(value) and value > 0 for value in (window, px_per_s, fps)):
         raise ValueError("Parámetros de video inválidos")
     window_pixels = int(round(window * px_per_s / 2)) * 2
     if window_pixels < 2:
         raise ValueError("Ventana de video demasiado pequeña")
     target = Path(target)
-    if target.exists():
+    if target.exists() and not force:
         raise ValueError("El video ya existe")
     target.parent.mkdir(parents=True, exist_ok=True)
     duration = waveform.shape[-1] / sample_rate
     with tempfile.TemporaryDirectory(prefix="diarization-video-") as temp:
         directory = Path(temp)
         draw_video_images(directory, waveform, sample_rate, t0, hypothesis, reference,
-                          times, hz, labels, px_per_s)
+                          times, hz, labels, px_per_s, spec_data, ref_label)
         content_width = max(1, math.ceil(duration * px_per_s))
         filters = (
             f"[0:v]pad={content_width + window_pixels}:720:{window_pixels // 2}:0:black,"
@@ -367,22 +365,29 @@ def render_video(audio, target, waveform, sample_rate, t0, hypothesis, reference
             f"drawbox=x={200 + window_pixels // 2}:y=0:w=2:h=720:color=white:t=fill,"
             "scale=w='max(1280,iw)':h=-2,format=yuv420p[v]"
         )
+        descriptor, temp_video = tempfile.mkstemp(prefix=".viz-", suffix=".mp4", dir=target.parent)
+        os.close(descriptor)
+        temporary = Path(temp_video)
         command = [shutil.which("ffmpeg") or imageio_ffmpeg.get_ffmpeg_exe(),
                    "-nostdin", "-v", "error", "-loop", "1", "-framerate", str(fps),
                    "-i", str(directory / "content.png"), "-loop", "1", "-framerate", str(fps),
                    "-i", str(directory / "side.png"), "-ss", str(t0), "-i", str(audio),
                    "-filter_complex", filters, "-map", "[v]", "-map", "2:a:0", "-t", str(duration),
-                   "-c:v", "libx264", "-pix_fmt", "yuv420p", "-c:a", "aac", "-movflags", "+faststart",
-                   "-n", str(target)]
+                   "-c:v", "libx264", "-preset", "veryfast", "-pix_fmt", "yuv420p",
+                   "-c:a", "aac", "-movflags", "+faststart",
+                   "-y", str(temporary)]
         try:
             subprocess.run(command, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         except subprocess.CalledProcessError as error:
-            target.unlink(missing_ok=True)
             raise RuntimeError("No se pudo generar el video") from error
+        else:
+            temporary.replace(target)
+        finally:
+            temporary.unlink(missing_ok=True)
 
 
 def render(audio, rttm, out, ref=None, start=None, end=None, dry_run=False,
-           video=None, window=20, px_per_s=100, fps=30):
+           video=None, window=20, px_per_s=100, fps=30, force=False, ref_label="referencia"):
     waveform, sample_rate = load_mono(audio)
     i0, i1 = clip_bounds(waveform.shape[-1], sample_rate, start, end)
     t0, t1 = i0 / sample_rate, i1 / sample_rate
@@ -397,14 +402,16 @@ def render(audio, rttm, out, ref=None, start=None, end=None, dry_run=False,
     }
     if dry_run:
         return summary
-    if video is not None and Path(video).exists():
+    if video is not None and Path(video).exists() and not force:
         raise ValueError("El video ya existe")
     clip = waveform[:, i0:i1]
     times, hz, labels = pitch_series(clip, sample_rate, hyp_tracks, t0)
-    draw(out, clip, sample_rate, t0, hypothesis, reference, times, hz, labels)
+    spec_data = spectrogram(clip, sample_rate, t0)
+    draw(out, clip, sample_rate, t0, hypothesis, reference, times, hz, labels,
+         spec_data, ref_label)
     if video is not None:
         render_video(audio, video, clip, sample_rate, t0, hypothesis, reference,
-                     times, hz, labels, window, px_per_s, fps)
+                     times, hz, labels, spec_data, window, px_per_s, fps, force, ref_label)
     summary["times"] = times
     summary["hz"] = hz
     return summary
@@ -415,11 +422,13 @@ def main():
     parser.add_argument("--audio", type=Path, required=True)
     parser.add_argument("--rttm", type=Path, required=True)
     parser.add_argument("--ref", type=Path)
+    parser.add_argument("--ref-label", default="referencia")
     parser.add_argument("--out", type=Path, required=True)
     parser.add_argument("--start", type=float)
     parser.add_argument("--end", type=float)
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--video", type=Path)
+    parser.add_argument("--force", action="store_true")
     parser.add_argument("--window", type=float, default=20)
     parser.add_argument("--px-per-s", type=float, default=100)
     parser.add_argument("--fps", type=float, default=30)
@@ -429,6 +438,7 @@ def main():
             args.audio, args.rttm, args.out, ref=args.ref,
             start=args.start, end=args.end, dry_run=args.dry_run,
             video=args.video, window=args.window, px_per_s=args.px_per_s, fps=args.fps,
+            force=args.force, ref_label=args.ref_label,
         )
     except (OSError, ValueError, RuntimeError) as error:
         parser.exit(1, f"Error: {type(error).__name__}; revise el audio y los RTTM.\n")
