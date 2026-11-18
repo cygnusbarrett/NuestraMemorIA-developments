@@ -1,2 +1,6 @@
 uri,ruta_audio,duracion_s,n_hablantes_esperado,tipo,notas
-ev01,eval/audio/ev01.wav,240,,documental,
+ev01,eval/audio/ev01.wav,240,5,documental,aprox. según escucha; incluye multitudes coreando
+ev02,eval/audio/ev02.wav,180,,documental,
+ev03,eval/audio/ev03.wav,180,,documental,
+ev04,eval/audio/ev04.wav,300,,documental,
+ev05,eval/audio/ev05.wav,180,,documental,

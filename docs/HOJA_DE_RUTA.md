@@ -12,13 +12,13 @@
 | Etapa | Objetivo | Estado |
 |---|---|---|
 | 1 | v0 de punta a punta sin anotación: línea base corrida y reportada con un comando | cerrada (2026-11-18) |
-| 2 | Conjunto de evaluación completo y mejoras baratas sobre pyannote 3.1 | por planificar (DEC-11 obliga a replantearla) |
+| 2 | Variantes de pyannote 3.1 comparadas sin referencia | en curso |
 | 3 | Backends de nueva generación en entornos aislados | sin iniciar |
 | 4 | Visualización y corrección (espectrograma + F0 + hablantes) | sin iniciar |
 | 5 | Hablantes enrolados | sin iniciar |
 | 6 | Integración al pipeline | sin iniciar |
 
-**Siguiente paso:** planificar la etapa 2 con medidas sin referencia (DEC-12) cuando el responsable entregue P-09.
+**Siguiente paso:** tarea 2.5 (ejecutor); en paralelo, primera ronda de la 2.6 (conductor) tras commit y push.
 
 Casillas: `[ ]` pendiente, `[~]` implementada y en revisión, `[x]` cerrada.
 Todas las tareas de agente se implementan con el prompt A y se revisan con el
@@ -210,36 +210,143 @@ comandos.
 - [x] **1.9 Cierre de la etapa 1** (conductor, metodo.md §9). Depende de
   la 1.10.
 
-### Etapa 2: conjunto completo y mejoras baratas sobre pyannote 3.1
+### Etapa 2: variantes de pyannote 3.1 comparadas sin referencia
 
-**Objetivo verificable:** al menos 3 referencias humanas (15 a 30 minutos en
-total) que cubren entrevista limpia, ruidosa, voces del mismo género, más de 2
-hablantes y habla superpuesta; el LEADERBOARD identifica la mejor
-configuración de pyannote 3.1. Ref.: DIARIZATION_PLAN §5 Fases 0 y 2.
+**Objetivo verificable:** cada variante de pyannote 3.1 (número de
+hablantes, preprocesamiento y sus combinaciones) corre con un solo comando
+en `jumbita` sobre `ev01` a `ev05`. Su resultado queda guardado aparte, con
+sus métricas sin referencia (DEC-12), su imagen y su video. El LEADERBOARD
+ordena las variantes con los criterios de DEC-13, y la mejor queda nombrada
+en el estado tras una ronda de escucha del responsable sobre los tramos
+donde las variantes discrepan. Ref.: DIARIZATION_PLAN §5 Fase 2; DEC-12 a
+DEC-15.
 
-Las tareas se detallan (Depende de, Rol, Terminado cuando completos) al
-planificar la etapa, con las fichas `manager-etapa` y `adversario-plan`.
-Mientras siga vigente DEC-11, el objetivo de esta etapa se replantea al
-planificarla: sin referencias, solo se puede comparar el acuerdo entre
-configuraciones y escuchar los desacuerdos, no medir el error.
+Riesgos que la etapa controla (revisión con `adversario-plan`):
+- Una variante degenerada (por ejemplo, un solo hablante) puede salir
+  estable y sin fragmentación: por eso el número de hablantes es el primer
+  criterio y el resumen marca toda variante que estime 1 hablante.
+- El preprocesamiento no puede mover el tiempo: el audio procesado debe
+  durar lo mismo que el original (±1 cuadro de 10 ms) o la variante falla.
+- CPU y GPU pueden dar resultados distintos: todas las variantes, incluida la
+  línea base, corren en el mismo dispositivo (`jumbita`, GPU 1).
+- Los 5 fragmentos son del mismo documental: las conclusiones valen para ese
+  material y no se generalizan al archivo sin otra comprobación.
 
-- [ ] **2.1 [Responsable]** Elegir y anotar de 2 a 5 fragmentos más.
-- [ ] **2.2** Número de hablantes: oráculo desde `manifest.csv` y
-  `min_speakers=2, max_speakers=4`. Terminado cuando ambas filas están en el
-  LEADERBOARD con la cobertura completa.
-- [ ] **2.3** Preprocesamiento barato solo para diarizar (`--preprocess`):
-  remuestreo y normalización de loudness (EBU R128). Terminado cuando cada
-  técnica tiene su fila.
-- [ ] **2.4** Reducción de ruido (`noisereduce`) y des-reverberación (WPE),
-  cada una por separado. Terminado cuando cada técnica tiene su fila.
-- [ ] **2.5** Aislamiento de voz con Demucs (`htdemucs`, GPU en `jumbita`),
-  primero sobre un fragmento. Terminado cuando tiene su fila y su costo.
-- [ ] **2.6** Mejor combinación de 2.2 a 2.5. Terminado cuando está en el
-  LEADERBOARD y la mejor configuración queda nombrada en el estado.
-- [ ] **2.7** (Opcional) Hiperparámetros (`clustering.threshold`,
-  `segmentation.min_duration_off`) sobre un subconjunto de desarrollo
-  distinto del de evaluación.
-- [ ] **2.8** Cierre de la etapa 2.
+- [x] **2.1 Conjunto de la etapa** (conductor, 2026-11-18)
+  - `ev02` a `ev05` (min 10–13, 13–16, 16–21 y 21–24 del mismo documental)
+    recortados y registrados; `ev01` con 5 hablantes aproximados según el
+    responsable, con multitudes coreando. WAV copiados a `jumbita` (hash
+    verificado).
+
+- [x] **2.2 Arnés v1: variantes, criterios y resultados por iteración**
+  - **Depende de:** 2.1
+  - **Ref.:** DIARIZATION_PLAN §4 (principio 5), §5 Fase 2; R-04; DEC-12 a
+    DEC-14
+  - **Rol:** dev-backend
+  - `diarization.evaluate` acepta `--num-speakers N`, `--oracle-num-speakers`
+    (desde `n_hablantes_esperado`; donde está vacío corre en automático),
+    `--min-speakers`, `--max-speakers`, `--preprocess <nombre>` (de momento
+    solo `none`) y `--version`. El identificador de la variante sale de esos
+    parámetros (por ejemplo `auto__none`, `oraculo__none`, `min2-max8__none`)
+    y define la carpeta `eval/results/pyannote31/<variante>/` (DEC-14).
+    La carpeta v0 `eval/results/pyannote31/auto/` (CPU, solo `ev01`) se
+    conserva como histórico y su fila del LEADERBOARD se rotula así.
+  - Métricas nuevas por fragmento y agregadas: acierto del número de
+    hablantes donde se conoce; fragmentación (proporción de turnos de menos
+    de 0,5 s y número de hablantes con menos del 2 % del habla); marca de
+    "degenerada" si estima 1 hablante.
+  - **Estabilidad:** `--estabilidad` vuelve a correr cada fragmento con dos
+    perturbaciones leves (−6 dB de ganancia; 50 ms de silencio al inicio,
+    descontados después) y reporta la discrepancia entre la salida original y
+    cada perturbada con la métrica de DER, rotulada como `inestabilidad` y
+    nunca como error (DEC-06).
+  - **Comparación:** `python -m diarization.compare --a <variante> --b
+    <variante>` calcula la discrepancia por fragmento y lista los 5 tramos
+    más largos en los que no coinciden (inicio, fin, etiquetas de cada
+    lado), para la escucha dirigida.
+  - El LEADERBOARD tiene una fila por variante, ordenada según DEC-13, con
+    hablantes por fragmento (no la suma; R-04) y el dispositivo.
+  - **Terminado cuando:** tests sintéticos cubren el identificador de
+    variante, la fragmentación, la marca de degenerada, el descuento del
+    desfase de 50 ms en la estabilidad y `compare` con un desacuerdo conocido;
+    la verificación estándar sale con código 0.
+
+- [x] **2.3 Visualización v1 con `librosa` (adelanta 4.1; R-05)**
+  - **Depende de:** 2.1
+  - **Ref.:** DIARIZATION_PLAN §5 Fase 4; R-05, R-06; DEC-15
+  - **Rol:** dev-datos
+  - Agregar `librosa` al entorno principal (`pyproject.toml` y `uv.lock`;
+    aprobado). Comprobar antes que el paquete es el oficial y que el lock solo
+    agrega `librosa` y sus dependencias, sin cambiar `torch`, `whisperx` ni
+    `pyannote`.
+  - F0 con `librosa.pyin`, dibujando solo los cuadros sonoros; espectrograma
+    CQT o eje desde 50 Hz, sin bloques en los graves; marcas de tiempo con
+    línea y texto centrado; `--force` para regenerar el video (R-06).
+  - `--ref` acepta otra hipótesis con un rótulo propio (`--ref-label`), para
+    comparar dos variantes en la misma imagen o video con los desacuerdos en
+    rojo.
+  - **Terminado cuando:** el test del tono sintético pasa con `pyin`; un tono
+    con silencios no dibuja F0 en los silencios; la verificación estándar
+    sale con código 0; la diferencia del `uv.lock` queda anotada en la
+    bitácora.
+
+- [x] **2.4 Preprocesamiento con ffmpeg**
+  - **Depende de:** 2.2
+  - **Ref.:** DIARIZATION_PLAN §5 Fase 2 (paso 3)
+  - **Rol:** dev-datos
+  - `diarization/preprocess.py` con un registro de técnicas por nombre:
+    `loudnorm` (EBU R128), `highpass80` y `afftdn` (reducción de ruido de
+    ffmpeg). Escribe el audio procesado en `eval/cache/<técnica>/<uri>.wav`
+    (ignorado por git), lo reutiliza si ya existe y comprueba que dura lo
+    mismo. Solo el audio que va a diarizar se procesa: el ASR no se toca.
+  - **Terminado cuando:** tests sintéticos de duración igual y de
+    reutilización; `--preprocess loudnorm` funciona en `evaluate`; la
+    verificación estándar sale con código 0.
+
+- [ ] **2.5 Preprocesamiento en entornos aislados**
+  - **Depende de:** 2.4
+  - **Ref.:** DIARIZATION_PLAN §4 (principio 3), §5 Fase 2 (paso 3); DEC-03,
+    DEC-15
+  - **Rol:** dev-infra
+  - `envs/preproc/` (con su `pyproject.toml` y su lock) con `noisereduce`,
+    `nara_wpe` y `demucs`, y su script `wav entrada → wav salida`. El
+    registro de 2.4 agrega `noisereduce`, `wpe` y `demucs` (pista `vocals`
+    de `htdemucs`), que se llaman por subproceso. Demucs usa la GPU indicada
+    por `CUDA_VISIBLE_DEVICES`.
+  - **Terminado cuando:** cada técnica procesa un WAV sintético y conserva la
+    duración; el entorno principal y su `uv.lock` no cambian; la
+    verificación estándar sale con código 0.
+
+- [ ] **2.6 Corridas en `jumbita`** (conductor)
+  - **Depende de:** 2.2, 2.3 y 2.4 para la primera ronda; 2.5 para la
+    segunda
+  - En `jumbita` con `CUDA_VISIBLE_DEVICES=1`, sobre `ev01` a `ev05`, con
+    `--estabilidad`. Ronda 1: `auto__none` (línea base en GPU),
+    `oraculo__none`, `min2-max8__none`, `auto__loudnorm`, `auto__highpass80`
+    y `auto__afftdn`. Ronda 2: `auto__noisereduce`, `auto__wpe` y
+    `auto__demucs`. Ronda 3: la combinación de las dos mejores técnicas con
+    la mejor opción de número de hablantes.
+  - Imagen y video por variante y fragmento, más videos de comparación de
+    cada variante contra la línea base. Los resultados se traen a este
+    equipo; las imágenes, los videos y el audio procesado quedan fuera de
+    git.
+  - **Terminado cuando:** las 3 rondas están en el LEADERBOARD con su costo
+    (tiempo de GPU y de pared) anotado en la bitácora.
+
+- [ ] **2.7 [Responsable] Ronda de escucha**
+  - **Depende de:** 2.6
+  - Unos 10 minutos por ronda: escuchar en los videos de comparación los
+    tramos de desacuerdo que lista `compare`, y decir en cada uno qué variante
+    suena más correcta.
+  - **Terminado cuando:** el juicio del responsable queda en la bitácora.
+
+- [ ] **2.8 Recomendación y cierre de la etapa 2** (conductor)
+  - `eval/results/RECOMENDACION.md` con la mejor variante de pyannote 3.1,
+    los números según DEC-13, la escucha y sus límites (un solo documental,
+    sin referencia). Cierre según metodo.md §9.
+
+- [ ] **2.9** (Opcional) Hiperparámetros (`clustering.threshold`,
+  `segmentation.min_duration_off`), solo si la ronda 3 deja dudas.
 
 ### Etapa 3: backends de nueva generación
 
@@ -354,6 +461,21 @@ Ref.: DIARIZATION_PLAN §5 Fase 6.
   conjunto de fragmentos más diverso. Ningún resultado se presenta como
   precisión (DEC-06).
 
+- **DEC-13 · Orden de criterios sin referencia.** Aprobado por el
+  responsable el 2026-11-18: (1) acierto del número de hablantes conocido;
+  (2) menos fragmentación; (3) más estabilidad ante perturbaciones leves;
+  (4) juicio del responsable al escuchar los desacuerdos.
+- **DEC-14 · Resultados por iteración.** Cada variante guarda su resultado en
+  su propia carpeta (`eval/results/<backend>/<variante>/`) con métricas,
+  RTTM, registro de la corrida, imagen y video, sin pisar los de otras
+  variantes, para comparar todas al final. Las imágenes, los videos y el
+  audio procesado se guardan en local y no se versionan.
+- **DEC-15 · Dependencias aprobadas para la etapa 2.** `librosa` en el
+  entorno principal (cambia `uv.lock` con aprobación del responsable);
+  `noisereduce`, `nara_wpe` y `demucs` en `envs/preproc/`, aislado. Cómputo
+  en `jumbita` (GPU 1, libre) y, si no está disponible, en el servidor
+  `kuntun`, ambos infraestructura propia (amplía DEC-05).
+
 
 ## 4. Preguntas abiertas
 
@@ -368,9 +490,9 @@ Ref.: DIARIZATION_PLAN §5 Fase 6.
   `include = ["audio_transcription*", "diarization*"]`. Probado en una copia:
   `uv.lock` no cambia. Toca `pyproject.toml`, así que necesita aprobación
   (DEC-03). Aprobada.
-- **P-02 · Servidor `jumbita`** (bloquea 1.7 si se corre allí y 2.5). Ruta del
-  repo en el servidor, GPU que se pueden usar y si tiene `uv` y el entorno
-  instalados.
+- **P-02 · Servidor `jumbita`.** Resuelta (2026-11-18): repo en
+  `~/Repos/WhisperXAD` en `feature/diarizacion`, `uv` y `.env` presentes, GPU 1
+  libre (la GPU 0 la usa otro proceso y no se toca).
 - **P-03 · Remoto de push.** Resuelta (2026-11-18): rama
   `feature/diarizacion` en `upstream` (DEC-08).
 - **P-04 · Fragmento v0.** Resuelta (2026-11-18): `ev01` es el audio de un
@@ -388,7 +510,5 @@ Ref.: DIARIZATION_PLAN §5 Fase 6.
   aparte antes de la etapa 6?
 - **P-08 · Cómo medir una mejora sin anotación.** Resuelta (2026-11-18): sin
   anotación (DEC-12).
-- **P-09 · Insumos para la etapa 2** (bloquea su planificación). (a) Número
-  de hablantes conocido por archivo, para algunas cintas. (b) 2 o 3
-  fragmentos más, de otra naturaleza (idealmente entrevistas en cinta de
-  otras épocas o lugares), con ruta y tramo.
+- **P-09 · Insumos para la etapa 2.** Resuelta (2026-11-18): ver 2.1 y
+  DEC-13 a DEC-15.
