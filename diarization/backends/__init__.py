@@ -1,0 +1,1 @@
+"""Backends seleccionables de diarización."""

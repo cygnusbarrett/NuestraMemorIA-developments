@@ -107,6 +107,13 @@ audio_transcription/inputs/audios/
 # estructura_proyecto.txt__pycache__/
 *.pyc
 audio_transcription/outputs/
+
+# Datos locales de evaluación
+eval/audio/
+eval/preannotation/
+eval/fuentes.local.csv
+eval/results/**/*.png
+eval/results/**/*.mp4
 .venv/
 
 # Runtime inputs/outputs (any layout under these trees)
