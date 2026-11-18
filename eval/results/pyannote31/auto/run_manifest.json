@@ -1,0 +1,17 @@
+{
+  "modelo": "pyannote/speaker-diarization-3.1",
+  "pyannote_audio": "3.4.0",
+  "whisperx": "3.7.4",
+  "backend": "pyannote31",
+  "device": "cpu",
+  "seed": 0,
+  "parametros": {
+    "num_speakers": null,
+    "min_speakers": null,
+    "max_speakers": null,
+    "preprocesamiento": "ninguno"
+  },
+  "audio_sha256": {
+    "ev01": "5366b9e4e122cb253ac28dcf6a0beda9c3c298dbd9c89b0537d50fe3276890da"
+  }
+}
