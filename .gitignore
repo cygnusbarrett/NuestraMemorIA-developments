@@ -110,6 +110,7 @@ audio_transcription/outputs/
 
 # Datos locales de evaluación
 eval/audio/
+eval/cache/
 eval/preannotation/
 eval/fuentes.local.csv
 eval/results/**/*.png
