@@ -108,3 +108,9 @@ audio_transcription/inputs/audios/
 *.pyc
 audio_transcription/outputs/
 .venv/
+
+# Runtime inputs/outputs (any layout under these trees)
+audio_transcription/inputs/
+audio_transcription/output/
+audio_transcription/outputs/
+

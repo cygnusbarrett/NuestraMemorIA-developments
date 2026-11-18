@@ -68,7 +68,10 @@ class Pipeline:
         self.args = args
         self.logger = logging.getLogger("HiFi-Pipeline")
         
-        os.environ["CUDA_VISIBLE_DEVICES"] = str(args.gpu_index)
+        # Respect launcher pin (e.g. CUDA_VISIBLE_DEVICES=1 on shared hosts).
+        # Overwriting with gpu_index remaps to physical GPU0 and collides with peers.
+        if "CUDA_VISIBLE_DEVICES" not in os.environ:
+            os.environ["CUDA_VISIBLE_DEVICES"] = str(args.gpu_index)
         self.device = "cuda:0" if torch.cuda.is_available() else "cpu"
         
         self.logger.info(f"🧠 Pipeline iniciado en {self.device} (FP32 Force)")
