@@ -41,3 +41,18 @@ de los segmentos de hablante.
    herramienta prevista en la tarea 1.2. Solo una referencia validada por una
    persona se usa para evaluar; conserva el audio y las etiquetas locales sin
    subirlos a servicios externos.
+
+## Comparar variantes
+
+Ejecuta una variante con `python -m diarization.evaluate --backend pyannote31
+--manifest eval/manifest.csv --device cpu`. El directorio de resultados se
+crea según los parámetros en `eval/results/pyannote31/`. Usa
+`--num-speakers`, `--oracle-num-speakers` o `--min-speakers` y
+`--max-speakers` para configurar los hablantes; `--estabilidad` añade dos
+corridas perturbadas por fragmento. `--version` identifica la versión de la
+corrida y `--preprocess none` indica que no se modifica el audio.
+
+Para comparar dos resultados, ejecuta `python -m diarization.compare --a
+<variante> --b <variante>`. La discrepancia DER y los tramos de desacuerdo
+comparan salidas automáticas; no son una medida de precisión. La carpeta
+`auto/` conserva el resultado histórico de la etapa 1.
