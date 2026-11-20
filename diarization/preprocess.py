@@ -16,7 +16,13 @@ from scipy import signal
 DURATION_TOLERANCE_S = 0.01
 MAX_LAG_S = 0.5
 ALIGN_TOLERANCE_S = 0.001
+# Si la salida casi no tiene energía o no se parece a la entrada, no se inventa un desfase.
+ALIGN_MIN_RMS_RATIO = 1e-4
+ALIGN_MIN_PEAK_CORR = 0.05
 CACHE_ROOT = Path("eval/cache")
+REPO_ROOT = Path(__file__).resolve().parent.parent
+PREPROC_PROJECT = REPO_ROOT / "envs" / "preproc"
+PREPROC_SCRIPT = PREPROC_PROJECT / "run.py"
 
 
 def ffmpeg_bin():
@@ -88,23 +94,89 @@ def _ffmpeg_technique(filter_expr):
     return apply
 
 
+def preproc_command(technique, source, destination):
+    return [
+        "uv", "run", "--frozen", "--project", str(PREPROC_PROJECT),
+        "python", str(PREPROC_SCRIPT),
+        technique, str(source), str(destination),
+    ]
+
+
+def _run_preproc_subprocess(technique, source, destination):
+    destination = Path(destination)
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    descriptor, temporary_name = tempfile.mkstemp(
+        prefix=".preproc-env-", suffix=".wav", dir=destination.parent,
+    )
+    os.close(descriptor)
+    temporary = Path(temporary_name)
+    command = preproc_command(technique, source, temporary)
+    try:
+        completed = subprocess.run(
+            command,
+            check=False,
+            capture_output=True,
+            text=True,
+            env=os.environ.copy(),
+        )
+        if completed.returncode != 0:
+            detail = (completed.stderr or completed.stdout or "").strip()
+            message = f"Preprocesamiento {technique} falló (código {completed.returncode})"
+            if detail:
+                message = f"{message}: {detail.splitlines()[-1]}"
+            raise RuntimeError(message)
+        if not temporary.is_file():
+            raise RuntimeError(f"Preprocesamiento {technique} no escribió salida")
+        temporary.replace(destination)
+    except Exception:
+        temporary.unlink(missing_ok=True)
+        raise
+
+
+def _subprocess_technique(technique):
+    def apply(source, destination):
+        _run_preproc_subprocess(technique, source, destination)
+
+    return apply
+
+
 # Registro por nombre: cada entrada es callable(source, destination) -> None.
-# La 2.5 agregará técnicas que llamen a subprocesos en envs/preproc/.
 TECHNIQUES = {
     "loudnorm": _ffmpeg_technique("loudnorm=I=-16:TP=-1.5:LRA=11"),
     "highpass80": _ffmpeg_technique("highpass=f=80"),
     "afftdn": _ffmpeg_technique("afftdn"),
+    "noisereduce": _subprocess_technique("noisereduce"),
+    "wpe": _subprocess_technique("wpe"),
+    "demucs": _subprocess_technique("demucs"),
 }
 
 
 def register(name, apply):
-    if not name or name == "none":
+    if not name or name == "none" or "+" in name:
         raise ValueError("Nombre de técnica inválido")
     TECHNIQUES[name] = apply
 
 
 def known_names():
     return ("none", *sorted(TECHNIQUES))
+
+
+def parse_preprocess(name):
+    """Valida el nombre y devuelve las técnicas en orden (vacío si es ``none``)."""
+    if name is None or str(name) == "":
+        raise ValueError("Nombre de preprocesamiento vacío")
+    name = str(name)
+    if name == "none":
+        return []
+    parts = name.split("+")
+    if any(part == "" for part in parts):
+        raise ValueError(f"Cadena de preprocesamiento inválida: {name}")
+    if any(part == "none" for part in parts):
+        raise ValueError("none no puede formar parte de una cadena")
+    unknown = [part for part in parts if part not in TECHNIQUES]
+    if unknown:
+        raise ValueError(f"Preprocesamiento desconocido: {', '.join(unknown)}")
+    return parts
 
 
 def _mono(samples):
@@ -119,7 +191,11 @@ def estimate_lag_samples(reference, estimate, sample_rate, max_lag_s=MAX_LAG_S):
     estimate = _mono(estimate)
     if reference.size == 0 or estimate.size == 0:
         return None
-    if float(np.max(np.abs(reference))) < 1e-8 or float(np.max(np.abs(estimate))) < 1e-8:
+    ref_rms = float(np.sqrt(np.mean(np.square(reference))))
+    est_rms = float(np.sqrt(np.mean(np.square(estimate))))
+    if ref_rms < 1e-8 or est_rms < 1e-8:
+        return None
+    if est_rms / ref_rms < ALIGN_MIN_RMS_RATIO:
         return None
     max_lag = max(1, int(round(max_lag_s * sample_rate)))
     correlation = signal.correlate(estimate, reference, mode="full", method="fft")
@@ -127,7 +203,12 @@ def estimate_lag_samples(reference, estimate, sample_rate, max_lag_s=MAX_LAG_S):
     window = (lags >= -max_lag) & (lags <= max_lag)
     if not np.any(window):
         return None
-    return int(lags[window][np.argmax(correlation[window])])
+    peak_index = int(np.argmax(correlation[window]))
+    peak = float(correlation[window][peak_index])
+    denom = float(np.linalg.norm(reference) * np.linalg.norm(estimate))
+    if denom < 1e-12 or peak / denom < ALIGN_MIN_PEAK_CORR:
+        return None
+    return int(lags[window][peak_index])
 
 
 def _shift_samples(samples, lag):
@@ -200,12 +281,13 @@ def align_processed(source, processed, destination):
 
 
 def process(technique, source, destination, *, reuse=True):
-    """Aplica una técnica a `source` y deja el WAV alineado en `destination`."""
-    if technique == "none":
+    """Aplica una técnica o cadena (`a+b`) y deja el WAV alineado en `destination`.
+
+    El desfase se compensa una sola vez contra el audio original (R-10).
+    """
+    steps = parse_preprocess(technique)
+    if not steps:
         raise ValueError("none no produce archivo procesado")
-    apply = TECHNIQUES.get(technique)
-    if apply is None:
-        raise ValueError(f"Preprocesamiento desconocido: {technique}")
     source = Path(source)
     destination = Path(destination)
     input_duration = duration(source)
@@ -216,28 +298,35 @@ def process(technique, source, destination, *, reuse=True):
         destination.unlink(missing_ok=True)
         sidecar.unlink(missing_ok=True)
     destination.parent.mkdir(parents=True, exist_ok=True)
-    descriptor, raw_name = tempfile.mkstemp(
-        prefix=".preproc-raw-", suffix=".wav", dir=destination.parent,
-    )
-    os.close(descriptor)
-    raw = Path(raw_name)
+    intermediates = []
     try:
-        apply(source, raw)
-        if not raw.is_file():
-            raise RuntimeError(f"No se generó salida para {technique}")
-        output_duration = duration(raw)
-        if abs(output_duration - input_duration) > DURATION_TOLERANCE_S:
-            raise ValueError(
-                f"Duración distinta tras {technique}: "
-                f"entrada {input_duration:.3f} s, salida {output_duration:.3f} s"
+        current = source
+        for step in steps:
+            apply = TECHNIQUES[step]
+            descriptor, raw_name = tempfile.mkstemp(
+                prefix=".preproc-raw-", suffix=".wav", dir=destination.parent,
             )
-        align_processed(source, raw, destination)
+            os.close(descriptor)
+            raw = Path(raw_name)
+            intermediates.append(raw)
+            apply(current, raw)
+            if not raw.is_file():
+                raise RuntimeError(f"No se generó salida para {step}")
+            output_duration = duration(raw)
+            if abs(output_duration - input_duration) > DURATION_TOLERANCE_S:
+                raise ValueError(
+                    f"Duración distinta tras {step}: "
+                    f"entrada {input_duration:.3f} s, salida {output_duration:.3f} s"
+                )
+            current = raw
+        align_processed(source, current, destination)
     except Exception:
         destination.unlink(missing_ok=True)
         sidecar.unlink(missing_ok=True)
         raise
     finally:
-        raw.unlink(missing_ok=True)
+        for raw in intermediates:
+            raw.unlink(missing_ok=True)
     return destination
 
 

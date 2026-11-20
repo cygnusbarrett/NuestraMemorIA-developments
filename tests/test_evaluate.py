@@ -104,12 +104,15 @@ def test_variants_and_validation():
     assert evaluate.variant_id(min_speakers=2, max_speakers=8) == "min2-max8__none"
     assert evaluate.variant_id(num_speakers=3) == "num3__none"
     assert evaluate.variant_id(preprocess="loudnorm") == "auto__loudnorm"
+    assert evaluate.variant_id(preprocess="highpass80+loudnorm") == "auto__highpass80+loudnorm"
     with pytest.raises(ValueError):
         evaluate.variant_id(num_speakers=2, oracle=True)
     with pytest.raises(ValueError):
         evaluate.variant_id(min_speakers=5, max_speakers=2)
     with pytest.raises(ValueError):
         evaluate.variant_id(preprocess="desconocido")
+    with pytest.raises(ValueError):
+        evaluate.variant_id(preprocess="loudnorm+fantasma")
 
 
 def test_fragmentation_and_degenerate():

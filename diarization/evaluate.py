@@ -77,8 +77,10 @@ def wav_duration(path):
 
 
 def variant_id(num_speakers=None, oracle=False, min_speakers=None, max_speakers=None, preprocess="none"):
-    if preprocess != "none" and preprocess not in preproc.TECHNIQUES:
-        raise ValueError("Preprocesamiento desconocido")
+    try:
+        preproc.parse_preprocess(preprocess)
+    except ValueError as error:
+        raise ValueError(str(error)) from error
     values = (num_speakers, min_speakers, max_speakers)
     if any(value is not None and value < 1 for value in values):
         raise ValueError("El número de hablantes debe ser positivo")
@@ -300,7 +302,8 @@ def main():
     parser.add_argument("--oracle-num-speakers", action="store_true")
     parser.add_argument("--min-speakers", type=int)
     parser.add_argument("--max-speakers", type=int)
-    parser.add_argument("--preprocess", choices=list(preproc.known_names()), default="none")
+    parser.add_argument("--preprocess", default="none",
+                        help="none, una técnica o cadena con + (p. ej. highpass80+loudnorm)")
     parser.add_argument("--version", default="v1 provisional")
     parser.add_argument("--estabilidad", action="store_true")
     parser.add_argument("--device", default="cpu")

@@ -5,7 +5,7 @@
 > está en [`DIARIZATION_PLAN.md`](DIARIZATION_PLAN.md); las tareas la citan en
 > **Ref.** Reglas generales en [`AGENTS.md`](../AGENTS.md).
 
-**Última actualización:** 2026-11-18
+**Última actualización:** 2026-11-19
 
 ## 1. Estado
 
@@ -18,7 +18,7 @@
 | 5 | Hablantes enrolados | sin iniciar |
 | 6 | Integración al pipeline | sin iniciar |
 
-**Siguiente paso:** tarea 2.5 (ejecutor); ronda 1 de la 2.6 en curso (conductor).
+**Siguiente paso:** revisión de 2.5 (conductor); después, rondas 2 y 3 juntas en `jumbita` y una sola escucha (conductor y responsable); 2.8.
 
 Casillas: `[ ]` pendiente, `[~]` implementada y en revisión, `[x]` cerrada.
 Todas las tareas de agente se implementan con el prompt A y se revisan con el
@@ -303,7 +303,7 @@ Riesgos que la etapa controla (revisión con `adversario-plan`):
     reutilización; `--preprocess loudnorm` funciona en `evaluate`; la
     verificación estándar sale con código 0.
 
-- [ ] **2.5 Preprocesamiento en entornos aislados**
+- [~] **2.5 Preprocesamiento en entornos aislados**
   - **Depende de:** 2.4
   - **Ref.:** DIARIZATION_PLAN §4 (principio 3), §5 Fase 2 (paso 3); DEC-03,
     DEC-15
@@ -344,6 +344,17 @@ Riesgos que la etapa controla (revisión con `adversario-plan`):
   - `eval/results/RECOMENDACION.md` con la mejor variante de pyannote 3.1,
     los números según DEC-13, la escucha y sus límites (un solo documental,
     sin referencia). Cierre según metodo.md §9.
+
+- [x] **2.10 Técnicas encadenadas** (antes de la ronda 3)
+  - **Depende de:** 2.4
+  - **Rol:** dev-datos
+  - `--preprocess highpass80+loudnorm` aplica las técnicas en ese orden, con
+    caché propia (`eval/cache/highpass80+loudnorm/`), control de duración y
+    compensación de desfase del conjunto (R-10). El nombre de la variante es
+    `auto__highpass80+loudnorm`.
+  - **Terminado cuando:** test sintético de una cadena de dos técnicas con
+    duración igual y desfase compensado; la verificación estándar sale con
+    código 0.
 
 - [ ] **2.9** (Opcional) Hiperparámetros (`clustering.threshold`,
   `segmentation.min_duration_off`), solo si la ronda 3 deja dudas.
@@ -475,6 +486,14 @@ Ref.: DIARIZATION_PLAN §5 Fase 6.
   `noisereduce`, `nara_wpe` y `demucs` en `envs/preproc/`, aislado. Cómputo
   en `jumbita` (GPU 1, libre) y, si no está disponible, en el servidor
   `kuntun`, ambos infraestructura propia (amplía DEC-05).
+- **DEC-16 · La escucha prevalece sobre el número de hablantes.** Decidida
+  por el responsable el 2026-11-18, tras la ronda 1 de escucha (2.7). Ajusta
+  DEC-13: si el juicio del responsable en los tramos de desacuerdo
+  contradice el criterio (1), manda la escucha, porque el número de
+  hablantes se conoce en un solo fragmento (`ev01`) y es aproximado. El
+  LEADERBOARD conserva el orden por cifras; la recomendación (2.8) ordena
+  primero por escucha y lo explica. En la ronda 1, `auto__loudnorm` ganó o
+  empató en 8 de 9 tramos y la línea base no ganó ninguno.
 
 
 ## 4. Preguntas abiertas
@@ -512,3 +531,7 @@ Ref.: DIARIZATION_PLAN §5 Fase 6.
   anotación (DEC-12).
 - **P-09 · Insumos para la etapa 2.** Resuelta (2026-11-18): ver 2.1 y
   DEC-13 a DEC-15.
+- **P-10 · Número de hablantes de `ev01`.** ¿Son 5 contando el cántico o
+  bullicio de masas como un hablante, o sin contarlo? En la escucha, el
+  responsable trata la multitud como un hablante propio. Lo confirma el
+  responsable; cambia el acierto de todas las variantes en `ev01`.

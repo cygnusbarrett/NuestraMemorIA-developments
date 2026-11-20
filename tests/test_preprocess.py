@@ -152,3 +152,166 @@ def test_afftdn_voice_like_is_aligned(tmp_path):
     meta = preproc.read_shift(destination)
     assert meta is not None
     assert meta["omitido"] is False
+
+
+def test_parse_preprocess_chain_and_errors():
+    assert preproc.parse_preprocess("none") == []
+    assert preproc.parse_preprocess("loudnorm") == ["loudnorm"]
+    assert preproc.parse_preprocess("highpass80+loudnorm") == ["highpass80", "loudnorm"]
+    with pytest.raises(ValueError, match="desconocido"):
+        preproc.parse_preprocess("loudnorm+fantasma")
+    with pytest.raises(ValueError, match="inválida"):
+        preproc.parse_preprocess("loudnorm+")
+    with pytest.raises(ValueError, match="none"):
+        preproc.parse_preprocess("none+loudnorm")
+
+
+def test_chain_fake_techniques_align_and_reuse(tmp_path, monkeypatch):
+    sample_rate = 16000
+    source = tmp_path / "in.wav"
+    write_voice_like(source, duration_s=2.0, sample_rate=sample_rate)
+    delay = 400
+    chain = "retraso400+ganancia_test"
+
+    def delay_apply(src, dst):
+        data, rate = sf.read(str(src), dtype="float32", always_2d=True)
+        delayed = np.concatenate(
+            [np.zeros((delay, data.shape[1]), dtype=np.float32), data[: data.shape[0] - delay]],
+            axis=0,
+        )
+        sf.write(str(dst), delayed, rate, subtype="PCM_16")
+
+    def gain_apply(src, dst):
+        data, rate = sf.read(str(src), dtype="float32", always_2d=True)
+        sf.write(str(dst), data * 0.5, rate, subtype="PCM_16")
+
+    preproc.register("retraso400", delay_apply)
+    preproc.register("ganancia_test", gain_apply)
+    try:
+        assert preproc.parse_preprocess(chain) == ["retraso400", "ganancia_test"]
+        cache_dir = tmp_path / "cache"
+        destination = preproc.ensure_cached(chain, source, "ev99", cache_root=cache_dir)
+        assert destination == cache_dir / chain / "ev99.wav"
+        assert destination.is_file()
+        assert abs(preproc.duration(destination) - preproc.duration(source)) <= 0.01
+        reference, rate = sf.read(str(source), dtype="float32", always_2d=True)
+        aligned, _ = sf.read(str(destination), dtype="float32", always_2d=True)
+        remaining = preproc.estimate_lag_samples(reference, aligned, rate)
+        assert remaining is not None
+        assert abs(remaining) <= max(1, int(round(0.001 * rate)))
+        meta = preproc.read_shift(destination)
+        assert meta["desfase_muestras"] == delay
+        assert meta["compensado"] is True
+
+        calls = []
+
+        def boom_align(*args, **kwargs):
+            calls.append("align")
+            raise AssertionError("no debería realinear en reutilización")
+
+        monkeypatch.setattr(preproc, "align_processed", boom_align)
+        again = preproc.ensure_cached(chain, source, "ev99", cache_root=cache_dir)
+        assert again == destination
+        assert calls == []
+        assert preproc.read_shift(destination) == meta
+    finally:
+        preproc.TECHNIQUES.pop("retraso400", None)
+        preproc.TECHNIQUES.pop("ganancia_test", None)
+
+
+def test_isolated_techniques_are_registered():
+    for name in ("noisereduce", "wpe", "demucs"):
+        assert name in preproc.TECHNIQUES
+        assert name in preproc.parse_preprocess(name)
+
+
+def test_preproc_subprocess_command(tmp_path, monkeypatch):
+    source = tmp_path / "in.wav"
+    destination = tmp_path / "out.wav"
+    write_voice_like(source, duration_s=0.5)
+    seen = []
+
+    def fake_run(command, check=False, capture_output=True, text=True, env=None):
+        seen.append(list(command))
+        assert env is not None
+        assert "PATH" in env
+        Path(command[-1]).write_bytes(Path(command[-2]).read_bytes())
+        return type("Result", (), {"returncode": 0, "stderr": "", "stdout": ""})()
+
+    monkeypatch.setattr(preproc.subprocess, "run", fake_run)
+    preproc._run_preproc_subprocess("noisereduce", source, destination)
+    assert len(seen) == 1
+    command = seen[0]
+    assert command[:3] == ["uv", "run", "--frozen"]
+    assert command[command.index("--project") + 1] == str(preproc.PREPROC_PROJECT)
+    assert "python" in command
+    assert str(preproc.PREPROC_SCRIPT) in command
+    assert command[-3] == "noisereduce"
+    assert command[-2] == str(source)
+    assert Path(command[-1]).suffix == ".wav"
+    assert destination.is_file()
+
+
+def _preproc_env_ready():
+    venv_python = preproc.PREPROC_PROJECT / ".venv" / "bin" / "python"
+    if not venv_python.is_file() or not preproc.PREPROC_SCRIPT.is_file():
+        return False
+    try:
+        import subprocess
+
+        probe = subprocess.run(
+            ["uv", "run", "--frozen", "--project", str(preproc.PREPROC_PROJECT),
+             "python", "-c", "import noisereduce, nara_wpe, demucs, soundfile, torch"],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        return probe.returncode == 0
+    except OSError:
+        return False
+
+
+def _demucs_weights_ready():
+    try:
+        import subprocess
+
+        probe = subprocess.run(
+            ["uv", "run", "--frozen", "--project", str(preproc.PREPROC_PROJECT),
+             "python", "-c",
+             "from demucs.pretrained import get_model; get_model('htdemucs')"],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        return probe.returncode == 0
+    except OSError:
+        return False
+
+
+@pytest.mark.parametrize("technique", ["noisereduce", "wpe", "demucs"])
+def test_isolated_technique_preserves_duration(technique, tmp_path):
+    if not _preproc_env_ready():
+        pytest.skip("envs/preproc no está instalado")
+    if technique == "demucs" and not _demucs_weights_ready():
+        pytest.skip("faltan los pesos de htdemucs")
+    source = tmp_path / "in.wav"
+    write_voice_like(source, duration_s=3.0)
+    destination = tmp_path / technique / "out.wav"
+    preproc.process(technique, source, destination, reuse=False)
+    assert destination.is_file()
+    assert abs(preproc.duration(destination) - preproc.duration(source)) <= 0.01
+    assert preproc.meta_path(destination).is_file()
+
+
+def test_align_omits_when_output_is_near_silence(tmp_path):
+    source = tmp_path / "in.wav"
+    write_voice_like(source, duration_s=1.0)
+    processed = tmp_path / "silent.wav"
+    rate = 16000
+    sf.write(str(processed), np.zeros(rate, dtype=np.float32), rate, subtype="PCM_16")
+    destination = tmp_path / "out.wav"
+    meta = preproc.align_processed(source, processed, destination)
+    assert meta["omitido"] is True
+    assert meta["compensado"] is False
+    assert destination.is_file()
+    assert abs(preproc.duration(destination) - preproc.duration(source)) <= 0.01

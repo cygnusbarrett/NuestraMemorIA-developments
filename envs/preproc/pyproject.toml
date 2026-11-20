@@ -1,0 +1,19 @@
+[project]
+name = "whisperxad-preproc"
+version = "0.1.0"
+description = "Entorno aislado de preprocesamiento (noisereduce, WPE, demucs)."
+requires-python = ">=3.11,<3.12"
+dependencies = [
+    "noisereduce>=3.0.0,<4",
+    "nara-wpe>=0.0.11,<0.1",
+    "demucs>=4.0.0,<5",
+    "soundfile>=0.12.0,<1",
+    "numpy>=1.24,<3",
+    "scipy>=1.10,<2",
+    "torch>=2.1,<2.9",
+    "torchaudio>=2.1,<2.9",
+]
+
+[tool.uv]
+# Sin índices extra: torch de PyPI trae CUDA en Linux x86_64.
+package = false
