@@ -8,6 +8,9 @@ from pyannote.metrics.diarization import DiarizationErrorRate
 
 from diarization.rttm import read_rttm
 
+RESULTS_ROOT = Path("eval/results")
+DEFAULT_BACKEND = "pyannote31"
+
 
 def compare_annotations(a, b, max_intervals=5):
     metric = DiarizationErrorRate(collar=0, skip_overlap=False)
@@ -37,16 +40,40 @@ def compare(a, b):
     return {uri: compare_annotations(read_rttm(left[uri]), read_rttm(right[uri])) for uri in sorted(left)}
 
 
+def resolve_variant_path(identifier, *, root=RESULTS_ROOT):
+    """Resuelve `<backend>/<variante>` o `<variante>` (pyannote31) bajo eval/results."""
+    text = str(identifier).strip()
+    if not text or text in (".", "..") or "\\" in text:
+        raise ValueError("Identificador de variante inválido")
+    parts = Path(text).parts
+    if any(part in ("", ".", "..") for part in parts):
+        raise ValueError("Identificador de variante inválido")
+    if len(parts) == 1:
+        relative = Path(DEFAULT_BACKEND) / parts[0]
+    elif len(parts) == 2:
+        relative = Path(parts[0]) / parts[1]
+    else:
+        raise ValueError("Identificador de variante inválido")
+    root = Path(root).resolve()
+    resolved = (root / relative).resolve()
+    try:
+        resolved.relative_to(root)
+    except ValueError as error:
+        raise ValueError("La variante sale de eval/results") from error
+    return resolved
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--a', required=True)
     parser.add_argument('--b', required=True)
     args = parser.parse_args()
-    root = Path('eval/results/pyannote31')
-    for variant in (args.a, args.b):
-        if Path(variant).name != variant or variant in ('.', '..'):
-            parser.error('Identificador de variante inválido')
-    print(json.dumps(compare(root / args.a, root / args.b), ensure_ascii=False, indent=2))
+    try:
+        left = resolve_variant_path(args.a)
+        right = resolve_variant_path(args.b)
+    except ValueError as error:
+        parser.error(str(error))
+    print(json.dumps(compare(left, right), ensure_ascii=False, indent=2))
 
 
 if __name__ == '__main__':

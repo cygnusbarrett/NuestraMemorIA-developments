@@ -20,12 +20,21 @@ from pyannote.core import Annotation, Segment
 from dotenv import load_dotenv
 from pyannote.metrics.diarization import DiarizationErrorRate, JaccardErrorRate
 
-from diarization.backends import pyannote31
+from diarization.backends import community1, pyannote31
 from diarization.compare import compare_annotations
 from diarization import preprocess as preproc
 from diarization.rttm import read_rttm, write_rttm
 
-MODEL = "pyannote/speaker-diarization-3.1"
+BACKENDS = {
+    "pyannote31": {
+        "module": pyannote31,
+        "modelo": "pyannote/speaker-diarization-3.1",
+    },
+    "community1": {
+        "module": community1,
+        "modelo": "pyannote/speaker-diarization-community-1",
+    },
+}
 MISSING = "sin referencia"
 FORCED = "forzado"
 FIELDS = [
@@ -134,15 +143,35 @@ def stability(engine, audio, hypothesis, duration, options, preprocess="none"):
             compare_annotations(hypothesis, delayed)["discrepancia_der"])
 
 
-def leaderboard(path, config, rows, aggregate, *, variant, device, run_version):
+def _leaderboard_variant_key(line):
+    cells = [cell.strip() for cell in line.split("|")[1:-1]]
+    return cells[0] if cells else ""
+
+
+def _normalize_leaderboard_row(line, default_backend="pyannote31"):
+    """Prefija filas antiguas sin backend para no confundirlas con community1."""
+    key = _leaderboard_variant_key(line)
+    if not key or "/" in key:
+        return line
+    return line.replace(f"| {key} |", f"| {default_backend}/{key} |", 1)
+
+
+def leaderboard(path, config, rows, aggregate, *, variant, device, run_version, backend_name="pyannote31"):
     # El histórico v0 se conserva con su esquema original y se identifica explícitamente.
+    del config
+    board_variant = f"{backend_name}/{variant}"
     old = path.read_text(encoding="utf-8") if path.exists() else ""
     if "v0 histórico" not in old and "pyannote31 · sin preprocesamiento · auto" in old:
         old = old.replace("v0 provisional", "v0 histórico (CPU)")
     marker = "\n## Variantes v1\n"
     historic = old.split(marker)[0].rstrip() if old else "# Leaderboard"
     existing = old.split(marker, 1)[1].splitlines() if marker in old else []
-    existing = [line for line in existing if line.startswith("| ") and not line.startswith("| variante ") and not line.startswith("| ---") and not line.startswith(f"| {variant} |")]
+    existing = [
+        _normalize_leaderboard_row(line)
+        for line in existing
+        if line.startswith("| ") and not line.startswith("| variante ") and not line.startswith("| ---")
+    ]
+    existing = [line for line in existing if not line.startswith(f"| {board_variant} |")]
     known = [r["acierto_hablantes"] for r in rows if isinstance(r["acierto_hablantes"], int)]
     forced = any(r["acierto_hablantes"] == FORCED for r in rows)
     accuracy = FORCED if forced else (f"{sum(known)}/{len(known)}" if known else "sin datos")
@@ -158,7 +187,7 @@ def leaderboard(path, config, rows, aggregate, *, variant, device, run_version):
     ref_status = f"{reference}/{len(rows)} con referencia" if reference else MISSING
     der = aggregate["der_0"]
     der_text = f"{der:.4f}" if isinstance(der, float) else str(der)
-    line = f"| {variant} | {run_version} | {device} | {len(rows)} | {counts} | {accuracy} | {short:.4f} | {small} | {show(instability)} | {sum(r['degenerada'] for r in rows)} | {ref_status} | {der_text} |"
+    line = f"| {board_variant} | {run_version} | {device} | {len(rows)} | {counts} | {accuracy} | {short:.4f} | {small} | {show(instability)} | {sum(r['degenerada'] for r in rows)} | {ref_status} | {der_text} |"
     existing.append(line)
     def ranking(line):
         cells = [cell.strip() for cell in line.split("|")[1:-1]]
@@ -181,7 +210,7 @@ def leaderboard(path, config, rows, aggregate, *, variant, device, run_version):
     path.write_text(historic + marker + "\n" + headers + "\n| " + " | ".join(["---"] * 12) + " |\n" + "\n".join(existing) + "\n", encoding="utf-8")
 
 
-def evaluate(manifest, out, *, backend, device="cpu", seed=0, reference_dir=Path("eval/reference"), leaderboard_path=Path("eval/results/LEADERBOARD.md"), num_speakers=None, oracle=False, min_speakers=None, max_speakers=None, preprocess="none", run_version="v1 provisional", estabilidad=False, cache_root=preproc.CACHE_ROOT):
+def evaluate(manifest, out, *, backend, device="cpu", seed=0, reference_dir=Path("eval/reference"), leaderboard_path=Path("eval/results/LEADERBOARD.md"), num_speakers=None, oracle=False, min_speakers=None, max_speakers=None, preprocess="none", run_version="v1 provisional", estabilidad=False, cache_root=preproc.CACHE_ROOT, backend_name="pyannote31"):
     variant = variant_id(num_speakers, oracle, min_speakers, max_speakers, preprocess)
     random.seed(seed)
     np.random.seed(seed)
@@ -272,16 +301,30 @@ def evaluate(manifest, out, *, backend, device="cpu", seed=0, reference_dir=Path
                     f"Turnos cortos: {short}/{turns}; hablantes mínimos: {sum(row['hablantes_minimos'] for row in rows)}; fragmentos degenerados: {sum(row['degenerada'] for row in rows)}.",
                     f"Inestabilidad media: {statistics.mean(instability):.4f}." if instability else "Inestabilidad: sin datos.", ""])
     (out / "summary.md").write_text("\n".join(summary), encoding="utf-8")
+    meta = BACKENDS.get(backend_name, {"modelo": backend_name})
     run_manifest = {
-        "modelo": MODEL, "pyannote_audio": version("pyannote.audio"), "whisperx": version("whisperx"),
-        "backend": "pyannote31", "device": device, "seed": seed,
-        "parametros": {"num_speakers": num_speakers, "oracle": oracle, "min_speakers": min_speakers, "max_speakers": max_speakers, "preprocesamiento": preprocess, "estabilidad": estabilidad, "version": run_version, "variante": variant},
+        "modelo": meta["modelo"],
+        "backend": backend_name,
+        "device": device,
+        "seed": seed,
+        "parametros": {
+            "num_speakers": num_speakers, "oracle": oracle, "min_speakers": min_speakers,
+            "max_speakers": max_speakers, "preprocesamiento": preprocess,
+            "estabilidad": estabilidad, "version": run_version, "variante": variant,
+        },
         "audio_sha256": hashes,
         "audio_procesado_sha256": processed_hashes,
         "desfase_compensado_muestras": shift_samples,
     }
+    if backend_name == "pyannote31":
+        run_manifest["pyannote_audio"] = version("pyannote.audio")
+        run_manifest["whisperx"] = version("whisperx")
+    elif backend_name == "community1":
+        isolated = community1.isolated_pyannote_version()
+        if isolated is not None:
+            run_manifest["pyannote_audio"] = isolated
     (out / "run_manifest.json").write_text(json.dumps(run_manifest, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
-    config = "pyannote31 · sin preprocesamiento · auto"
+    config = f"{backend_name} · sin preprocesamiento · auto"
     if reference_count:
         aggregate = {"der_025": abs(primary), "der_0": abs(strict), "jer": abs(jer),
                      "missed_s": primary.accumulated_["missed detection"],
@@ -289,15 +332,18 @@ def evaluate(manifest, out, *, backend, device="cpu", seed=0, reference_dir=Path
                      "confusion_s": primary.accumulated_["confusion"]}
     else:
         aggregate = dict.fromkeys(("der_025", "der_0", "jer", "missed_s", "false_alarm_s", "confusion_s"), MISSING)
-    leaderboard(leaderboard_path, config, rows, aggregate, variant=variant, device=device, run_version=run_version)
+    leaderboard(
+        leaderboard_path, config, rows, aggregate, variant=variant, device=device,
+        run_version=run_version, backend_name=backend_name,
+    )
     return rows
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--backend", choices=["pyannote31"], required=True)
+    parser.add_argument("--backend", choices=sorted(BACKENDS), required=True)
     parser.add_argument("--manifest", type=Path, required=True)
-    parser.add_argument("--out", type=Path, default=Path("eval/results/pyannote31"))
+    parser.add_argument("--out", type=Path)
     parser.add_argument("--num-speakers", type=int)
     parser.add_argument("--oracle-num-speakers", action="store_true")
     parser.add_argument("--min-speakers", type=int)
@@ -314,7 +360,15 @@ def main():
         variant = variant_id(args.num_speakers, args.oracle_num_speakers, args.min_speakers, args.max_speakers, args.preprocess)
     except ValueError as error:
         parser.error(str(error))
-    evaluate(args.manifest, args.out / variant, backend=pyannote31.Backend, device=args.device, seed=args.seed, num_speakers=args.num_speakers, oracle=args.oracle_num_speakers, min_speakers=args.min_speakers, max_speakers=args.max_speakers, preprocess=args.preprocess, run_version=args.version, estabilidad=args.estabilidad)
+    out_root = args.out if args.out is not None else Path("eval/results") / args.backend
+    engine = BACKENDS[args.backend]["module"].Backend
+    evaluate(
+        args.manifest, out_root / variant, backend=engine, device=args.device, seed=args.seed,
+        num_speakers=args.num_speakers, oracle=args.oracle_num_speakers,
+        min_speakers=args.min_speakers, max_speakers=args.max_speakers,
+        preprocess=args.preprocess, run_version=args.version, estabilidad=args.estabilidad,
+        backend_name=args.backend,
+    )
 
 
 if __name__ == "__main__":

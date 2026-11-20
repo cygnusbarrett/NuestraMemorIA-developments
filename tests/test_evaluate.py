@@ -58,11 +58,13 @@ def test_no_reference_and_single_pipeline_load(tmp_path):
         "tiempo_s": 3, "turnos": 2, "duracion_min_s": 1,
         "duracion_mediana_s": 1.5, "duracion_max_s": 2,
     }
-    assert json.loads((out / "run_manifest.json").read_text())["seed"] == 0
+    manifest_json = json.loads((out / "run_manifest.json").read_text())
+    assert manifest_json["seed"] == 0
+    assert manifest_json["backend"] == "pyannote31"
     assert (out / "hypotheses" / "ev01.rttm").exists()
     assert "sin referencia" in leaderboard.read_text()
     evaluate.evaluate(manifest, out, backend=Backend, reference_dir=tmp_path / "refs", leaderboard_path=leaderboard)
-    assert leaderboard.read_text().count("| auto__none |") == 1
+    assert leaderboard.read_text().count("| pyannote31/auto__none |") == 1
 
 
 def test_reference_generates_metrics(tmp_path):
@@ -213,8 +215,8 @@ def test_forced_accuracy_does_not_outweigh_fragmentation(tmp_path):
     assert "forzado" in (tmp_path / "fixed" / "metrics.csv").read_text()
     assert "Acierto de hablantes: forzado." in (tmp_path / "fixed" / "summary.md").read_text()
     lines = board.read_text().splitlines()
-    auto = next(i for i, line in enumerate(lines) if line.startswith("| auto__none |"))
-    oracle = next(i for i, line in enumerate(lines) if line.startswith("| oraculo__none |"))
+    auto = next(i for i, line in enumerate(lines) if line.startswith("| pyannote31/auto__none |"))
+    oracle = next(i for i, line in enumerate(lines) if line.startswith("| pyannote31/oraculo__none |"))
     assert "| 0/1 |" in lines[auto]
     assert "| forzado |" in lines[oracle]
     assert auto < oracle

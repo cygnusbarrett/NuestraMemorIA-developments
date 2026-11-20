@@ -1,0 +1,14 @@
+[project]
+name = "whisperxad-community1"
+version = "0.1.0"
+description = "Entorno aislado para pyannote speaker-diarization-community-1."
+requires-python = ">=3.11,<3.12"
+dependencies = [
+    "pyannote.audio>=4.0.0,<5",
+    "soundfile>=0.12.0,<1",
+    "numpy>=1.24,<3",
+]
+
+[tool.uv]
+# Sin índices extra: torch de PyPI trae CUDA en Linux x86_64.
+package = false

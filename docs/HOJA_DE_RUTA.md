@@ -5,7 +5,7 @@
 > está en [`DIARIZATION_PLAN.md`](DIARIZATION_PLAN.md); las tareas la citan en
 > **Ref.** Reglas generales en [`AGENTS.md`](../AGENTS.md).
 
-**Última actualización:** 2026-11-19
+**Última actualización:** 2026-11-20
 
 ## 1. Estado
 
@@ -13,12 +13,12 @@
 |---|---|---|
 | 1 | v0 de punta a punta sin anotación: línea base corrida y reportada con un comando | cerrada (2026-11-18) |
 | 2 | Variantes de pyannote 3.1 comparadas sin referencia | en curso |
-| 3 | Backends de nueva generación en entornos aislados | sin iniciar |
+| 3 | Backends de nueva generación en entornos aislados | en curso (3.1 en revisión) |
 | 4 | Visualización y corrección (espectrograma + F0 + hablantes) | sin iniciar |
 | 5 | Hablantes enrolados | sin iniciar |
 | 6 | Integración al pipeline | sin iniciar |
 
-**Siguiente paso:** 3.1 (ejecutor); escucha de las rondas 2 y 3 (2.7, responsable) y recomendación v1 con el cierre de la etapa 2 (conductor). Recomendación v0 provisional en `eval/results/RECOMENDACION.md`.
+**Siguiente paso:** re-revisión de 3.1 / R-12 (conductor, prompt B); luego 3.2 (ejecutor). Escucha de las rondas 2 y 3 (2.7, responsable) y recomendación v1 con el cierre de la etapa 2 (conductor) siguen en paralelo.
 
 Casillas: `[ ]` pendiente, `[~]` implementada y en revisión, `[x]` cerrada.
 Todas las tareas de agente se implementan con el prompt A y se revisan con el
@@ -367,7 +367,7 @@ de hablantes; `eval/results/RECOMENDACION.md` argumenta con números,
 latencia, dependencias y riesgo de mantenimiento. Ref.: DIARIZATION_PLAN §4
 (principio 3), §5 Fase 3.
 
-- [ ] **3.1** Entorno aislado `envs/community1/` (pyannote.audio 4.x) y
+- [~] **3.1** Entorno aislado `envs/community1/` (pyannote.audio 4.x) y
   backend por subproceso que escribe RTTM. Requiere P-06.
 - [ ] **3.2** Entorno aislado `envs/diarizen/` y backend. Requiere P-06.
 - [ ] **3.3** Corridas comparativas y `RECOMENDACION.md`.
