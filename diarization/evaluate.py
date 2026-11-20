@@ -20,7 +20,7 @@ from pyannote.core import Annotation, Segment
 from dotenv import load_dotenv
 from pyannote.metrics.diarization import DiarizationErrorRate, JaccardErrorRate
 
-from diarization.backends import community1, pyannote31
+from diarization.backends import community1, diarizen, pyannote31
 from diarization.compare import compare_annotations
 from diarization import preprocess as preproc
 from diarization.rttm import read_rttm, write_rttm
@@ -33,6 +33,10 @@ BACKENDS = {
     "community1": {
         "module": community1,
         "modelo": "pyannote/speaker-diarization-community-1",
+    },
+    "diarizen": {
+        "module": diarizen,
+        "modelo": "BUT-FIT/diarizen-wavlm-large-s80-md-v2",
     },
 }
 MISSING = "sin referencia"
@@ -323,6 +327,10 @@ def evaluate(manifest, out, *, backend, device="cpu", seed=0, reference_dir=Path
         isolated = community1.isolated_pyannote_version()
         if isolated is not None:
             run_manifest["pyannote_audio"] = isolated
+    elif backend_name == "diarizen":
+        run_manifest["diarizen"] = diarizen.DIARIZEN_REV
+        run_manifest["diarizen_model_revision"] = diarizen.MODEL_REVISION
+        run_manifest["diarizen_embedding_revision"] = diarizen.EMBEDDING_REVISION
     (out / "run_manifest.json").write_text(json.dumps(run_manifest, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
     config = f"{backend_name} · sin preprocesamiento · auto"
     if reference_count:

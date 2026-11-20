@@ -1,0 +1,28 @@
+[project]
+name = "whisperxad-diarizen"
+version = "0.1.0"
+description = "Entorno aislado para DiariZen (BUT-FIT)."
+requires-python = ">=3.11,<3.12"
+dependencies = [
+    # Código oficial fijado (MIT). pyannote.audio es el fork del mismo repo, no PyPI.
+    "diarizen @ git+https://github.com/BUTSpeechFIT/DiariZen.git@844f5555b0a98acd0931511fc641a8c5b8ba92c7",
+    "pyannote-audio @ git+https://github.com/BUTSpeechFIT/DiariZen.git@844f5555b0a98acd0931511fc641a8c5b8ba92c7#subdirectory=pyannote-audio",
+    "torch>=2.8,<2.9",
+    "torchaudio>=2.8,<2.9",
+    "numpy>=1.26.4,<2",
+    "soundfile>=0.12.0,<1",
+    "scipy>=1.10,<2",
+    "toml>=0.10,<1",
+    "einops>=0.7,<1",
+    "huggingface-hub>=0.20,<1",
+    "accelerate>=0.28,<2",
+    "pyyaml>=6,<7",
+    "tqdm>=4.60,<5",
+    "pandas>=2,<3",
+    "matplotlib>=3.7,<4",
+    "librosa>=0.10,<1",
+]
+
+[tool.uv]
+# Sin índices extra: torch de PyPI (CUDA en Linux x86_64).
+package = false
