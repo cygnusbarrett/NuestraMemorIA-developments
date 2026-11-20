@@ -1,0 +1,27 @@
+{
+  "modelo": "pyannote/speaker-diarization-3.1",
+  "pyannote_audio": "3.4.0",
+  "whisperx": "3.7.4",
+  "backend": "pyannote31",
+  "device": "cuda",
+  "seed": 0,
+  "parametros": {
+    "num_speakers": null,
+    "oracle": true,
+    "min_speakers": null,
+    "max_speakers": null,
+    "preprocesamiento": "none",
+    "estabilidad": true,
+    "version": "v1 provisional",
+    "variante": "oraculo__none"
+  },
+  "audio_sha256": {
+    "ev01": "5366b9e4e122cb253ac28dcf6a0beda9c3c298dbd9c89b0537d50fe3276890da",
+    "ev02": "d93f504af574be73f09d36dc30fe55b51e52b96f4a41e52e7276440730ff5f15",
+    "ev03": "ed49a7b90bf232c95d193c92a3988d9cf5fa553004d9388e0d6a73b5df395c9b",
+    "ev04": "7be0cc62e008e7db6677fb266aaa274c03cef7b555b91686bd522264aefdb5a6",
+    "ev05": "632bee03baddf2d635b1362f77e5e7b871aad0d76348bde2d6f9f4207dccea7b"
+  },
+  "audio_procesado_sha256": {},
+  "desfase_compensado_muestras": {}
+}

@@ -18,7 +18,7 @@
 | 5 | Hablantes enrolados | sin iniciar |
 | 6 | Integración al pipeline | sin iniciar |
 
-**Siguiente paso:** revisión de 2.5 (conductor); después, rondas 2 y 3 juntas en `jumbita` y una sola escucha (conductor y responsable); 2.8.
+**Siguiente paso:** 3.1 (ejecutor); escucha de las rondas 2 y 3 (2.7, responsable) y recomendación v1 con el cierre de la etapa 2 (conductor). Recomendación v0 provisional en `eval/results/RECOMENDACION.md`.
 
 Casillas: `[ ]` pendiente, `[~]` implementada y en revisión, `[x]` cerrada.
 Todas las tareas de agente se implementan con el prompt A y se revisan con el
@@ -303,7 +303,7 @@ Riesgos que la etapa controla (revisión con `adversario-plan`):
     reutilización; `--preprocess loudnorm` funciona en `evaluate`; la
     verificación estándar sale con código 0.
 
-- [~] **2.5 Preprocesamiento en entornos aislados**
+- [x] **2.5 Preprocesamiento en entornos aislados**
   - **Depende de:** 2.4
   - **Ref.:** DIARIZATION_PLAN §4 (principio 3), §5 Fase 2 (paso 3); DEC-03,
     DEC-15
@@ -317,7 +317,7 @@ Riesgos que la etapa controla (revisión con `adversario-plan`):
     duración; el entorno principal y su `uv.lock` no cambian; la
     verificación estándar sale con código 0.
 
-- [ ] **2.6 Corridas en `jumbita`** (conductor)
+- [x] **2.6 Corridas en `jumbita`** (conductor)
   - **Depende de:** 2.2, 2.3 y 2.4 para la primera ronda; 2.5 para la
     segunda
   - En `jumbita` con `CUDA_VISIBLE_DEVICES=1`, sobre `ev01` a `ev05`, con
@@ -520,9 +520,12 @@ Ref.: DIARIZATION_PLAN §5 Fase 6.
   anotarlo.
 - **P-05 · Orden de la visualización.** Resuelta (2026-11-18): la v0 de la
   visualización se adelanta a la etapa 1 como tarea 1.8.
-- **P-06 · Licencias en Hugging Face** (bloquea 3.1 y 3.2). Aprobación para
-  aceptar las condiciones de `speaker-diarization-community-1` y revisar la
-  licencia de los pesos de DiariZen.
+- **P-06 · Licencias en Hugging Face.** Aprobada por el responsable
+  (2026-11-20). `speaker-diarization-community-1`: pesos CC-BY-4.0, con
+  aprobación automática al aceptar las condiciones; la acepta el responsable
+  en Hugging Face con la cuenta del token. DiariZen: código MIT, pesos
+  `BUT-FIT/diarizen-wavlm-*` CC-BY-NC-4.0 (solo uso no comercial); el
+  responsable confirma ese uso antes de la 3.2.
 - **P-07 · Errores de ruff previos.** `audio_transcription/` tiene 21 errores
   (14 E402, 4 F401, 3 F541) anteriores a este plan, por eso la verificación
   estándar revisa solo `diarization` y `tests`. ¿Se limpian en una tarea
@@ -531,7 +534,7 @@ Ref.: DIARIZATION_PLAN §5 Fase 6.
   anotación (DEC-12).
 - **P-09 · Insumos para la etapa 2.** Resuelta (2026-11-18): ver 2.1 y
   DEC-13 a DEC-15.
-- **P-10 · Número de hablantes de `ev01`.** ¿Son 5 contando el cántico o
-  bullicio de masas como un hablante, o sin contarlo? En la escucha, el
-  responsable trata la multitud como un hablante propio. Lo confirma el
-  responsable; cambia el acierto de todas las variantes en `ev01`.
+- **P-10 · Número de hablantes de `ev01`.** Resuelta (2026-11-20): son 5
+  contando la multitud (cántico o bullicio) como un hablante. Coincide con
+  `n_hablantes_esperado` del manifiesto, así que el acierto de las variantes
+  no cambia.

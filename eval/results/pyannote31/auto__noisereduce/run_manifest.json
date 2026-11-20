@@ -1,0 +1,39 @@
+{
+  "modelo": "pyannote/speaker-diarization-3.1",
+  "pyannote_audio": "3.4.0",
+  "whisperx": "3.7.4",
+  "backend": "pyannote31",
+  "device": "cuda",
+  "seed": 0,
+  "parametros": {
+    "num_speakers": null,
+    "oracle": false,
+    "min_speakers": null,
+    "max_speakers": null,
+    "preprocesamiento": "noisereduce",
+    "estabilidad": true,
+    "version": "v1 provisional",
+    "variante": "auto__noisereduce"
+  },
+  "audio_sha256": {
+    "ev01": "5366b9e4e122cb253ac28dcf6a0beda9c3c298dbd9c89b0537d50fe3276890da",
+    "ev02": "d93f504af574be73f09d36dc30fe55b51e52b96f4a41e52e7276440730ff5f15",
+    "ev03": "ed49a7b90bf232c95d193c92a3988d9cf5fa553004d9388e0d6a73b5df395c9b",
+    "ev04": "7be0cc62e008e7db6677fb266aaa274c03cef7b555b91686bd522264aefdb5a6",
+    "ev05": "632bee03baddf2d635b1362f77e5e7b871aad0d76348bde2d6f9f4207dccea7b"
+  },
+  "audio_procesado_sha256": {
+    "ev01": "8f75d0f90d12bf182b682cef6660c89bc8af4d3254123ce892262dc60def6c7f",
+    "ev02": "5b550d144e3be0ba0f65e461f3dc0f8bdab0bb445d886e10d038b419a2ae9857",
+    "ev03": "e0045cba382b8bd183e1f19599109eda6d69c54828d7fd8f5b43ba4ff1bca7d9",
+    "ev04": "2f986adb40ba71a19d114607534bb1f767fa26ac9326cdf1b797b2b5b9d5e7db",
+    "ev05": "eb211cf508184613e49ed02d5dc3fac5b66969d89c70dedfb6cbe04e35c0f394"
+  },
+  "desfase_compensado_muestras": {
+    "ev01": 0,
+    "ev02": 0,
+    "ev03": 0,
+    "ev04": 0,
+    "ev05": 0
+  }
+}
