@@ -1,0 +1,40 @@
+{
+  "modelo": "BUT-FIT/diarizen-wavlm-large-s80-md-v2",
+  "backend": "diarizen",
+  "device": "cuda",
+  "seed": 0,
+  "parametros": {
+    "num_speakers": null,
+    "oracle": false,
+    "min_speakers": null,
+    "max_speakers": null,
+    "preprocesamiento": "loudnorm",
+    "estabilidad": true,
+    "version": "v1 provisional",
+    "variante": "auto__loudnorm"
+  },
+  "audio_sha256": {
+    "ev01": "5366b9e4e122cb253ac28dcf6a0beda9c3c298dbd9c89b0537d50fe3276890da",
+    "ev02": "d93f504af574be73f09d36dc30fe55b51e52b96f4a41e52e7276440730ff5f15",
+    "ev03": "ed49a7b90bf232c95d193c92a3988d9cf5fa553004d9388e0d6a73b5df395c9b",
+    "ev04": "7be0cc62e008e7db6677fb266aaa274c03cef7b555b91686bd522264aefdb5a6",
+    "ev05": "632bee03baddf2d635b1362f77e5e7b871aad0d76348bde2d6f9f4207dccea7b"
+  },
+  "audio_procesado_sha256": {
+    "ev01": "3f981686c5e5cd2b68382e95e7b4077b07e8dc61d30e0fd4802ea26584e470c6",
+    "ev02": "ae95fde97d8ffd8b729ae570adb4423bc22f943f02224c2081136c92470da120",
+    "ev03": "e1dd9aee275ab0312174e941f97ea8a9a3c66ac67399b0051b844010acacc371",
+    "ev04": "d2dd8a5acb57847258139f736cf71d8bbb959496514799243e96addaaeffc719",
+    "ev05": "95cafedb253a271f1c36ae3c0bd3ba48bccaa8c4763c059ce2399d9267f2eb45"
+  },
+  "desfase_compensado_muestras": {
+    "ev01": 0,
+    "ev02": 0,
+    "ev03": 0,
+    "ev04": 0,
+    "ev05": 0
+  },
+  "diarizen": "844f5555b0a98acd0931511fc641a8c5b8ba92c7",
+  "diarizen_model_revision": "027b3e221b9d81dce2be794084f1dbd3ba2da403",
+  "diarizen_embedding_revision": "837717ddb9ff5507820346191109dc79c958d614"
+}
