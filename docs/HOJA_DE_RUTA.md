@@ -12,13 +12,15 @@
 | Etapa | Objetivo | Estado |
 |---|---|---|
 | 1 | v0 de punta a punta sin anotación: línea base corrida y reportada con un comando | cerrada (2026-11-18) |
-| 2 | Variantes de pyannote 3.1 comparadas sin referencia | en curso |
-| 3 | Backends de nueva generación en entornos aislados | en curso (3.2 en revisión) |
+| 2 | Variantes de pyannote 3.1 comparadas sin referencia | cerrada (2026-11-20; escucha parcial, DEC-17) |
+| 3 | Backends de nueva generación en entornos aislados | cerrada (2026-11-20; sin escucha, DEC-17) |
 | 4 | Visualización y corrección (espectrograma + F0 + hablantes) | sin iniciar |
 | 5 | Hablantes enrolados | sin iniciar |
 | 6 | Integración al pipeline | sin iniciar |
 
-**Siguiente paso:** re-revisión de 3.2 / R-13–R-15 (conductor, prompt B). Escucha de las rondas 2 y 3 (2.7, responsable) y recomendación v1 con el cierre de la etapa 2 (conductor) siguen en paralelo.
+**Recomendación vigente (v1 provisional):** `pyannote31/auto__loudnorm`, en `eval/results/RECOMENDACION.md`. El backend por defecto no cambia (DEC-01).
+
+**Siguiente paso:** etapa 4, tarea 4.2 (visualización interactiva; ejecutor). La 4.1 quedó cubierta por la 2.3.
 
 Casillas: `[ ]` pendiente, `[~]` implementada y en revisión, `[x]` cerrada.
 Todas las tareas de agente se implementan con el prompt A y se revisan con el
@@ -333,14 +335,14 @@ Riesgos que la etapa controla (revisión con `adversario-plan`):
   - **Terminado cuando:** las 3 rondas están en el LEADERBOARD con su costo
     (tiempo de GPU y de pared) anotado en la bitácora.
 
-- [ ] **2.7 [Responsable] Ronda de escucha**
+- [x] **2.7 [Responsable] Ronda de escucha** · *ronda 1 hecha; rondas 2 y 3 omitidas (DEC-17)*
   - **Depende de:** 2.6
   - Unos 10 minutos por ronda: escuchar en los videos de comparación los
     tramos de desacuerdo que lista `compare`, y decir en cada uno qué variante
     suena más correcta.
   - **Terminado cuando:** el juicio del responsable queda en la bitácora.
 
-- [ ] **2.8 Recomendación y cierre de la etapa 2** (conductor)
+- [x] **2.8 Recomendación y cierre de la etapa 2** (conductor)
   - `eval/results/RECOMENDACION.md` con la mejor variante de pyannote 3.1,
     los números según DEC-13, la escucha y sus límites (un solo documental,
     sin referencia). Cierre según metodo.md §9.
@@ -356,7 +358,7 @@ Riesgos que la etapa controla (revisión con `adversario-plan`):
     duración igual y desfase compensado; la verificación estándar sale con
     código 0.
 
-- [ ] **2.9** (Opcional) Hiperparámetros (`clustering.threshold`,
+- [ ] **2.9** (Opcional, no se hizo) Hiperparámetros (`clustering.threshold`,
   `segmentation.min_duration_off`), solo si la ronda 3 deja dudas.
 
 ### Etapa 3: backends de nueva generación
@@ -369,10 +371,10 @@ latencia, dependencias y riesgo de mantenimiento. Ref.: DIARIZATION_PLAN §4
 
 - [x] **3.1** Entorno aislado `envs/community1/` (pyannote.audio 4.x) y
   backend por subproceso que escribe RTTM. Requiere P-06.
-- [~] **3.2** Entorno aislado `envs/diarizen/` y backend. Requiere P-06.
-- [ ] **3.3** Corridas comparativas y `RECOMENDACION.md`.
-- [ ] **3.4** (Opcional) NeMo, si los anteriores no rinden en audio de cinta.
-- [ ] **3.5** Cierre de la etapa 3.
+- [x] **3.2** Entorno aislado `envs/diarizen/` y backend. Requiere P-06.
+- [x] **3.3** Corridas comparativas y `RECOMENDACION.md` (v1, sin escucha; DEC-17).
+- [ ] **3.4** (Opcional, no se hizo) NeMo, si los anteriores no rinden en audio de cinta.
+- [x] **3.5** Cierre de la etapa 3.
 
 ### Etapa 4: visualización y corrección
 
@@ -381,7 +383,7 @@ autocontenido, se reproduce sincronizado, se corrige un segmento y se exporta
 un RTTM que `diarization.evaluate` acepta. Ref.: DIARIZATION_PLAN §3, §5
 Fase 4.
 
-- [ ] **4.1** v1 estática: la v0 se hizo en la 1.8 (P-05). Aquí se pasa la F0 a
+- [x] **4.1** v1 estática (cubierta por la 2.3: F0 con `pyin`, espectrograma logarítmico): la v0 se hizo en la 1.8 (P-05). Aquí se pasa la F0 a
   `pyin` (requiere aprobar `librosa`) y se ajusta lo que haya salido de la
   revisión de la imagen de `ev01`.
 - [ ] **4.2** v1 interactiva: HTML con reproductor sincronizado, zoom, salto
@@ -494,6 +496,12 @@ Ref.: DIARIZATION_PLAN §5 Fase 6.
   LEADERBOARD conserva el orden por cifras; la recomendación (2.8) ordena
   primero por escucha y lo explica. En la ronda 1, `auto__loudnorm` ganó o
   empató en 8 de 9 tramos y la línea base no ganó ninguno.
+- **DEC-17 · Cierre de las etapas 2 y 3 sin más escucha.** Decidida por el
+  responsable el 2026-11-20. Las rondas 2 y 3 y la comparación de backends
+  no se escuchan; la recomendación v1 se apoya en la ronda 1 y en las cifras,
+  y sin escucha no cambia la variante elegida. Queda `pyannote31/auto__loudnorm`
+  como provisional; los tramos propuestos siguen en la bitácora por si se
+  retoma.
 
 
 ## 4. Preguntas abiertas
