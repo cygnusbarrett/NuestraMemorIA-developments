@@ -21,6 +21,7 @@
 | 6 | Integración al pipeline | sin iniciar |
 | 7 | Hablantes enrolados (diferida) | sin iniciar |
 | 8 | Corrección con LLM local (Qwen; diferida) | sin iniciar |
+| 9 | Identidad audiovisual con el video original (opcional; diferida) | sin iniciar |
 
 **Recomendación vigente (v1 provisional):** `pyannote31/auto__loudnorm`, en `eval/results/RECOMENDACION.md`. El backend por defecto no cambia (DEC-01).
 
@@ -530,6 +531,21 @@ corrección queda en el LEADERBOARD. Ref.: GUIA §13 Fase 4, §14, §15.
   RTTM corregido; umbral de confianza ajustado en dev.
 - [ ] **8.3** Cierre de la etapa 8.
 
+### Etapa 9: identidad audiovisual (opcional; diferida; DEC-22)
+
+**Objetivo verificable:** en los fragmentos con video y hablante en cámara,
+la DER audiovisual frente a la de solo audio, sin empeorar donde el video no
+aplica. Ref.: GUIA Anexo A, §13 Fase 7.
+
+- [ ] **9.1** Sincronía audio-video por clip (desfase y deriva); sin
+  sincronía validada no se usa el video (GUIA A.4).
+- [ ] **9.2** Preprocesamiento mínimo de video, detección de planos y de
+  rostros, y detección del hablante activo; modelos y licencias con
+  aprobación del responsable (GUIA A.2, A.3).
+- [ ] **9.3** Fusión conservadora voz-rostro, con `OFFSCREEN` y `NARRADOR`,
+  y su medición (GUIA A.5, A.7, A.8).
+- [ ] **9.4** Cierre de la etapa 9.
+
 Más adelante, sin etapa asignada (requieren horas anotadas, GUIA §13 Fases 5
 y 6): fine-tuning con degradación simulada y banco de voces entre
 grabaciones.
@@ -633,6 +649,12 @@ grabaciones.
   responsable el 2026-11-24. La corrección con LLM (GUIA §13 Fase 4) usa un
   modelo Qwen corriendo en `jumbita`, sin servicios externos (DEC-05), y
   queda para la etapa 8. Modelo y licencia exactos se aprueban en la 8.1.
+- **DEC-22 · Identidad audiovisual, opcional y local.** Decidida por el
+  responsable el 2026-11-24. Se registra la etapa 9 (GUIA Anexo A) como
+  diferida, después de la 8. Los rostros y sus embeddings son datos
+  sensibles: se procesan solo en infraestructura propia (DEC-05), no se
+  versionan, y la tabla de identidades no lleva nombres reales en el repo
+  (AGENTS.md §2).
 
 
 ## 4. Preguntas abiertas
