@@ -26,6 +26,8 @@
 18. Glosario
 19. Referencias
 
+**Anexo A** — Identidad audiovisual con el video original en blanco y negro (opcional)
+
 ---
 
 ## 1. Contexto y estado actual del proyecto
@@ -517,6 +519,10 @@ Si los mismos hablantes aparecen en varios archivos (locutores, entrevistadores,
 - Actualizar los centroides con un promedio ponderado (adaptativo) y **guardar las huellas por tipo de canal**, porque la misma voz en dos cintas distintas puede quedar lejos en el espacio de embeddings.
 - Revisión humana de las fusiones dudosas: unir dos identidades por error es costoso.
 
+### Fase 7 (opcional) — Identidad audiovisual
+
+Cuando hay video, usar el video original en blanco y negro para reconocer rostros y detectar al hablante activo, y fusionarlo con la diarización acústica. Detalle completo en el **Anexo A**. No requiere colorización.
+
 ---
 
 ## 14. Casos especiales
@@ -577,6 +583,8 @@ Si los mismos hablantes aparecen en varios archivos (locutores, entrevistadores,
 7. ¿Hay cambios de idioma, o solo español?
 8. ¿Cuál es el uso final? (¿Transcripción por hablante para archivo histórico? ¿Búsqueda por persona?) Eso define si conviene priorizar la DER o la identificación entre archivos.
 9. ¿Qué recursos de cómputo hay disponibles para el fine-tuning?
+10. ¿Qué proporción de los audios tiene video asociado? Y de esos, ¿cuántos tienen al hablante en cámara, entrevistador fuera de cámara o narrador en off?
+11. ¿Está validada la sincronía audio-video en las transferencias?
 
 ---
 
@@ -598,6 +606,8 @@ Si los mismos hablantes aparecen en varios archivos (locutores, entrevistadores,
 - **RTTM:** formato estándar de anotación de diarización.
 - **S-norm:** normalización simétrica de puntajes con una cohorte.
 - **VAD:** detección de actividad de voz.
+- **ASD (Active Speaker Detection):** detección de qué rostro visible está hablando.
+- **SyncNet:** modelo que estima la sincronía entre los labios y el audio.
 - **VBx:** clustering bayesiano con un HMM sobre x-vectors.
 - **Wow/flutter:** variaciones lentas o rápidas de la velocidad de la cinta que modulan el tono.
 
@@ -618,3 +628,102 @@ Si los mismos hablantes aparecen en varios archivos (locutores, entrevistadores,
 - Wang et al. (2024). *DiarizationLM: Speaker Diarization Post-Processing with Large Language Models*.
 - Desplanques et al. (2020). *ECAPA-TDNN*.
 - Bain et al. (2023). *WhisperX*.
+- Tao et al. (2021). *TalkNet: Is Someone Speaking?* (ASD); Light-ASD; LoCoNet.
+- Chung & Zisserman (2016). *Out of Time: Automated Lip Sync in the Wild* (SyncNet).
+- Deng et al. *ArcFace*; InsightFace (detección y embeddings de rostro).
+
+---
+
+## Anexo A — Identidad audiovisual con el video original en blanco y negro (opcional)
+
+> Este anexo pertenece al **repositorio de diarización**. Usa el **video original en blanco y negro**; **no necesita colorización** ni depende del repositorio de colorización. Es un módulo **opcional**: cuando no hay video, o el video no aporta (narrador en off, entrevistador fuera de cámara), el pipeline de solo audio de las secciones 11–14 sigue funcionando sin cambios.
+
+### A.1 Idea
+
+Cuando hay video, el rostro de quien habla es una segunda evidencia de identidad, independiente de la voz. Dos piezas:
+- **Reconocimiento de identidad visual:** detectar rostros, seguirlos dentro de cada plano, calcular sus embeddings y agruparlos entre planos y clips.
+- **Detección del hablante activo (ASD):** determinar qué rostro visible está hablando en cada momento, correlacionando el movimiento de los labios con el audio. Modelos de referencia: TalkNet-ASD, Light-ASD, LoCoNet (verificar las versiones actuales). La combinación de ambas cosas se conoce como **diarización audiovisual**.
+
+**Qué aporta a la diarización:**
+- Resuelve tramos donde el audio duda (ruido, backchannels cortos): gana el rostro que mueve los labios.
+- Vuelve a unir un hablante partido en dos clusters por un cambio de canal o micrófono: es el mismo rostro.
+- Separa a dos personas con voces parecidas: son rostros distintos.
+- Los nombres de la transcripción ("gracias, Jorge") o de rótulos en pantalla (con OCR) se asocian a la voz y al rostro a la vez.
+
+### A.2 El blanco y negro no es un obstáculo
+
+- La detección de rostros y sus embeddings (por ejemplo, RetinaFace/SCRFD con ArcFace en InsightFace) funcionan bien en escala de grises: basta replicar el canal de luminancia en los tres canales de entrada. La forma del rostro y la geometría importan más que el color.
+- La ASD trabaja con recortes de la boca y el audio. Muchos modelos ya usan los recortes de rostro en gris.
+- Para robustez, se puede afinar o calibrar con algunos ejemplos anotados del propio archivo (rostros de la época, con bigote o barba, en baja resolución).
+
+### A.3 Preprocesamiento mínimo de video (propio de este repositorio)
+
+Solo lo necesario para que funcionen la detección de rostros y la ASD. Es **independiente** de la restauración más completa que haga el repositorio de colorización.
+1. **Desentrelazar**, si el material es entrelazado (`bwdif`/`yadif` en ffmpeg, o QTGMC). El entrelazado daña la detección de rostros y, sobre todo, el movimiento de la boca.
+2. **Deflicker** suave de luminancia (`deflicker` en ffmpeg), para estabilizar la detección.
+3. **Detección de planos** (PySceneDetect o TransNetV2), para segmentar los tracks de rostro.
+4. Opcional: denoise ligero y corrección de contraste, solo si mejora la tasa de detección de rostros (medirlo).
+
+### A.4 Prerrequisito: sincronía audio-video
+
+En transferencias antiguas es común que el audio esté **desfasado** o que **derive** a lo largo del clip. La ASD necesita una sincronía fina, de decenas de milisegundos.
+1. **Estimar el desfase** por clip con un modelo tipo **SyncNet**, o con la correlación entre la apertura de la boca y la energía del audio en tramos con un solo rostro hablando.
+2. **Detectar la deriva:** estimar el desfase en varias ventanas a lo largo del clip. Si cambia, corregirlo.
+3. **Si la sincronía no se puede establecer con confianza, no usar la ASD** en ese clip.
+
+### A.5 Casos donde la ASD no aplica
+
+| Caso | Qué pasa | Qué hacer |
+|---|---|---|
+| **Hablante en cámara** | Caso ideal | Fusión completa: la ASD confirma o corrige la diarización y vincula voz con rostro |
+| **Entrevistador fuera de cámara** (muy frecuente) | Su voz nunca tiene un rostro que hable | Etiqueta `OFFSCREEN`: si la ASD da "ningún rostro visible habla" de forma consistente en los turnos de una misma voz. Sigue siendo un hablante válido |
+| **Narrador en off** | Una voz sostenida sobre muchos planos, sin rostro que hable, a menudo con otro canal (grabada en estudio) | Clase `NARRADOR`: presencia en muchos planos y escenas, ASD negativa y canal distinto. Se excluye de la vinculación voz-rostro |
+| **Solo audio** | No hay video | Pipeline de solo audio sin cambios. La tabla de identidades guarda la voz; si esa persona aparece con video en otro clip, se vincula ahí |
+| **Audio doblado o postsincronizado** | Los labios no coinciden | Una ASD sistemáticamente baja con rostros visibles indica falta de sincronía: no usar la ASD en ese clip |
+| **Multitud o coro** | No hay un rostro individual hablando | `CROWD` en el audio; el video no se usa para identidad |
+| **Varios rostros, uno habla** | La ASD tiene que elegir | Puntuación de la ASD por rostro, más la restricción de que normalmente habla uno a la vez (salvo solapamiento detectado en el audio) |
+| **Sincronía no establecida** | Desfase desconocido | No usar la ASD |
+
+**Regla de fusión conservadora:** la evidencia visual **solo** cambia una decisión del audio cuando (a) la sincronía está validada, (b) la confianza de la ASD es alta y (c) la confianza acústica es baja. Es la misma lógica que la fusión con el LLM (fase 4).
+
+### A.6 Tabla de identidades
+
+```json
+{
+  "entity_id": "P0007",
+  "type": "person",                       // person | narrator | offscreen | crowd
+  "names": [{"value": "Jorge ...", "source": "transcript_llm", "confidence": 0.7,
+             "human_verified": false}],
+  "voice": {
+    "centroids_by_channel": {"cinta_A": [/* embedding */], "estudio": [/* ... */]},
+    "n_segments": 143,
+    "offscreen_ratio": 0.05
+  },
+  "face": {"centroid": [/* embedding */], "n_tracks": 37, "best_frame_ref": "clip12_f0453.png"},
+  "appearances": [{"clip": "clip12", "t0": 12.4, "t1": 47.9,
+                   "evidence": ["voice", "face", "asd"]}],
+  "provenance": {"created": "2026-11-24", "last_update": "...", "human_verified": true}
+}
+```
+
+Es la evolución del banco de voces de la fase 6, con la modalidad visual agregada. Si en el futuro el repositorio de colorización quiere usar estas identidades, puede **leer** esta tabla y guardar sus colores en un archivo propio indexado por `entity_id`. Este repositorio no necesita saber nada del color.
+
+### A.7 Lógica de fusión (boceto)
+
+1. **Por clip**, de forma independiente:
+   - Audio: diarización con clusters de voz y su confianza.
+   - Video: tracks de rostro con embeddings, y la ASD por track y ventana si la sincronía es válida.
+2. **Co-ocurrencia voz-rostro:** para cada par (cluster de voz, track de rostro), sumar el tiempo en que la ASD dice que ese rostro habla mientras suena esa voz. Con esa matriz de afinidad se hace la **asignación** (algoritmo húngaro), dejando la opción "sin rostro" para `OFFSCREEN` y `NARRADOR`.
+3. **Correcciones cruzadas** (solo con alta confianza de la modalidad que corrige y baja de la corregida):
+   - Dos clusters de voz asignados con fuerza al **mismo rostro** → candidatos a unirse.
+   - Un cluster de voz asignado a **dos rostros distintos** de forma sostenida → candidato a dividirse.
+   - Un track de rostro de mala calidad durante un turno de voz confiable → hereda la identidad de esa voz.
+   - Restricción de no-unión visual: dos rostros en el mismo fotograma no son la misma persona.
+4. **Entre clips:** emparejar con la tabla global usando la voz (por canal), el rostro y los nombres. Las uniones dudosas pasan a revisión humana.
+
+### A.8 Cómo medir el aporte
+
+- DER de solo audio frente a DER audiovisual, **solo** sobre los segmentos con el hablante en cámara y la sincronía validada.
+- La misma comparación sobre **todo** el set, para verificar que no empeora donde la ASD no aplica.
+- Pureza y cobertura de los clusters de identidad frente a una anotación manual de quién es quién en una muestra.
+- Tasa de detección de rostros con y sin el preprocesamiento mínimo (A.3).
