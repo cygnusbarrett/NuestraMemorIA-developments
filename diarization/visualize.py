@@ -33,9 +33,12 @@ MEL_FMAX = 8000.0
 N_FFT = 4096
 SPEC_BANDS = 256
 SPEC_CMAP = "gray"
-F0_POINT_SIZE = 10
+F0_POINT_SIZE = 24
 F0_EDGECOLORS = "black"
-F0_LINEWIDTHS = 0.3
+F0_LINEWIDTHS = 0.5
+# pyin da un solo tono por instante: en un solapamiento no se sabe de quién es.
+OVERLAP = "solapado"
+OVERLAP_COLOR = (1.0, 1.0, 1.0)
 URI_CODE = re.compile(r"ev\d{2,}")
 
 
@@ -119,10 +122,15 @@ def pitch_series(waveform, sample_rate, tracks, offset, fmin=F0_LOW, fmax=F0_HIG
     limit = offset + waveform.shape[-1] / sample_rate
     for index, time in enumerate(times):
         active = speakers_at(tracks, float(time))
-        if time < limit and voiced[index] and len(active) == 1 and np.isfinite(values[index]):
+        if time < limit and voiced[index] and active and np.isfinite(values[index]):
             hz[index] = values[index]
-            labels[index] = next(iter(active))
+            labels[index] = next(iter(active)) if len(active) == 1 else OVERLAP
     return times, hz, labels
+
+
+def f0_colors(labels, voiced, colors):
+    return [colors.get(label, OVERLAP_COLOR) if label != OVERLAP else OVERLAP_COLOR
+            for label, keep in zip(labels, voiced) if keep]
 
 
 def disagreement_spans(hypothesis, reference, t0, t1):
@@ -229,7 +237,7 @@ def draw(path, waveform, sample_rate, t0, hypothesis, reference, times, hz, labe
         if voiced.any():
             spec_ax.scatter(
                 times[voiced], hz[voiced],
-                c=[colors[label] for label, keep in zip(labels, voiced) if keep],
+                c=f0_colors(labels, voiced, colors),
                 s=F0_POINT_SIZE, edgecolors=F0_EDGECOLORS, linewidths=F0_LINEWIDTHS,
                 rasterized=True, zorder=3,
             )
@@ -305,7 +313,7 @@ def draw_video_images(directory, waveform, sample_rate, t0, hypothesis, referenc
         voiced = np.isfinite(hz)
         if voiced.any():
             ax.scatter(times[voiced], hz[voiced],
-                       c=[colors[label] for label, keep in zip(labels, voiced) if keep],
+                       c=f0_colors(labels, voiced, colors),
                        s=F0_POINT_SIZE, edgecolors=F0_EDGECOLORS, linewidths=F0_LINEWIDTHS,
                        rasterized=True)
         stripes = fig.add_axes([0, 0.08, 1, 0.23])
@@ -341,6 +349,9 @@ def draw_video_images(directory, waveform, sample_rate, t0, hypothesis, referenc
         for index, name in enumerate(rows):
             y = 0.31 - 0.23 * (index + 0.5) / max(len(rows), 1)
             side.text(0.95, y, name, color=colors.get(name, "white"), ha="right", va="center", fontsize=9)
+        if OVERLAP in labels:
+            side.text(0.95, 0.335, f"F0 {OVERLAP}", color=OVERLAP_COLOR, ha="right", va="center",
+                      fontsize=8)
         side.savefig(directory / "side.png", dpi=100, facecolor="black")
     finally:
         plt.close(side)
@@ -420,6 +431,7 @@ def render(audio, rttm, out, ref=None, start=None, end=None, dry_run=False,
                      times, hz, labels, spec_data, window, px_per_s, fps, force, ref_label)
     summary["times"] = times
     summary["hz"] = hz
+    summary["labels"] = labels
     return summary
 
 

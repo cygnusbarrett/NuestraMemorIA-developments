@@ -15,7 +15,10 @@ from diarization.visualize import (
     F0_EDGECOLORS,
     F0_LINEWIDTHS,
     F0_POINT_SIZE,
+    OVERLAP,
+    OVERLAP_COLOR,
     SPEC_CMAP,
+    f0_colors,
     crop_position,
     disagreement_spans,
     load_mono,
@@ -228,3 +231,21 @@ def test_f0_contrast_over_gray_spectrogram(tmp_path, monkeypatch):
         assert kwargs.get("edgecolors") == F0_EDGECOLORS
         assert kwargs.get("linewidths") == F0_LINEWIDTHS
         assert kwargs.get("s") == F0_POINT_SIZE
+
+
+def test_f0_drawn_in_overlap_with_neutral_color(tmp_path):
+    audio, rttm, png = tmp_path / "tono.wav", tmp_path / "tono.rttm", tmp_path / "tono.png"
+    write_tone(audio)
+    write_spans(rttm, [(0.0, 2.0, "SPEAKER_00"), (1.0, 3.0, "SPEAKER_01")])
+    summary = render(audio, rttm, png)
+    times, hz, labels = summary["times"], summary["hz"], summary["labels"]
+    overlap = (times > 1.05) & (times < 1.95)
+    assert np.isfinite(hz[overlap]).all()
+    assert {labels[i] for i in np.flatnonzero(overlap)} == {OVERLAP}
+    single = (times > 0.6) & (times < 0.95)
+    assert {labels[i] for i in np.flatnonzero(single)} == {"SPEAKER_00"}
+    voiced = np.isfinite(hz)
+    colors = f0_colors(labels, voiced, {"SPEAKER_00": (0.0, 0.9, 0.9), "SPEAKER_01": (1.0, 0.4, 0.4)})
+    voiced_labels = [label for label, keep in zip(labels, voiced) if keep]
+    assert all(color == OVERLAP_COLOR for color, label in zip(colors, voiced_labels) if label == OVERLAP)
+    assert OVERLAP_COLOR not in {(0.0, 0.9, 0.9), (1.0, 0.4, 0.4)}
