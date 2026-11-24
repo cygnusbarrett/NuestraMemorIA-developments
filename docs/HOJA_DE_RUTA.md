@@ -24,7 +24,7 @@
 
 **Recomendación vigente (v1 provisional):** `pyannote31/auto__loudnorm`, en `eval/results/RECOMENDACION.md`. El backend por defecto no cambia (DEC-01).
 
-**Siguiente paso:** tarea 4.2 (F0 en solapamientos; conductor). Después, 4.4 (diagnóstico; ejecutor).
+**Siguiente paso:** 4.6 (HTML de revisión y corrección; Cursor) y, en paralelo, 4.5 (conjunto diverso; conductor).
 
 Casillas: `[ ]` pendiente, `[~]` implementada y en revisión, `[x]` cerrada.
 Todas las tareas de agente se implementan con el prompt A y se revisan con el
@@ -390,7 +390,7 @@ desglose, de la línea base y de la recomendación v1. Ref.: GUIA §11.3, §12,
 §13 Fase 0 y Fase 2.1; DEC-18 a DEC-20.
 
 - [x] **4.1** v1 estática (cubierta por la 2.3: F0 con `pyin`, espectrograma logarítmico).
-- [ ] **4.2 F0 en solapamientos** (conductor; pedido del responsable)
+- [x] **4.2 F0 en solapamientos** (conductor; pedido del responsable)
   - **Ref.:** GUIA §10; DEC-04
   - `visualize.py` dibuja la F0 también donde hay más de un hablante activo,
     en un color neutro (`pyin` da un solo tono por instante, no se sabe de
@@ -400,9 +400,9 @@ desglose, de la línea base y de la recomendación v1. Ref.: GUIA §11.3, §12,
     dibuja F0 en el solapamiento con el color neutro; los 10 videos están
     regenerados y el responsable los revisa; la verificación estándar sale
     con código 0.
-- [ ] **4.3 Guía en `docs/`** (conductor): `docs/GUIA_DIARIZACION.md`,
+- [x] **4.3 Guía en `docs/`** (conductor): `docs/GUIA_DIARIZACION.md`,
   citada en AGENTS.md §1 y en los Ref. Commit a pedido.
-- [ ] **4.4 Diagnóstico de degradaciones por archivo**
+- [x] **4.4 Diagnóstico de degradaciones por archivo**
   - **Depende de:** —
   - **Ref.:** GUIA §10, §13 Fase 2.1 (tabla y boceto)
   - **Rol:** dev-datos
@@ -414,6 +414,9 @@ desglose, de la línea base y de la recomendación v1. Ref.: GUIA §11.3, §12,
     clics, LUFS y LRA (filtro `ebur128` de ffmpeg) y SNR con la voz del RTTM.
     Salidas: `diagnostico.csv` (versionable, sin datos sensibles) y una
     imagen del espectro por fragmento (local).
+  - Modo archivo: `--inputs <lista.txt> --out <dir> [--max-minutes N]`
+    (ffmpeg → 16 kHz mono; CSV con rutas; carpeta local no versionada,
+    p. ej. `eval/diagnostico.local/`).
   - Sin dependencias nuevas: `numpy`, `scipy` (ya en el lock por `librosa`),
     `soundfile` o `torchaudio`, y ffmpeg.
   - **Terminado cuando:** tests sintéticos detectan un zumbido de 50 Hz

@@ -113,6 +113,7 @@ eval/audio/
 eval/cache/
 eval/preannotation/
 eval/fuentes.local.csv
+eval/diagnostico.local/
 eval/results/**/*.png
 eval/results/**/*.mp4
 .venv/
