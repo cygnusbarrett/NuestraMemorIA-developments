@@ -15,6 +15,9 @@ el ASR ni la alineación.
 - Referencia técnica de la diarización (diagnóstico, fases, referencias):
   `docs/DIARIZATION_PLAN.md`. Se lee solo la sección que cite el **Ref.** de
   cada tarea.
+- Guía para mejorar la diarización desde la etapa 4 (fases, diagnóstico de
+  degradaciones, protocolo experimental): `docs/GUIA_DIARIZACION.md`. Las
+  tareas la citan como `GUIA §n`; se lee solo esa sección.
 
 ## 2. Datos y privacidad
 

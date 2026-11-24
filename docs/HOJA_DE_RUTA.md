@@ -3,9 +3,11 @@
 > Plan de trabajo, estado, decisiones y preguntas abiertas. La referencia
 > técnica (diagnóstico, hipótesis F0, detalle de cada fase y bibliografía)
 > está en [`DIARIZATION_PLAN.md`](DIARIZATION_PLAN.md); las tareas la citan en
-> **Ref.** Reglas generales en [`AGENTS.md`](../AGENTS.md).
+> **Ref.** Desde la etapa 4, la guía de mejora es
+> [`GUIA_DIARIZACION.md`](GUIA_DIARIZACION.md), citada como `GUIA §n`.
+> Reglas generales en [`AGENTS.md`](../AGENTS.md).
 
-**Última actualización:** 2026-11-20
+**Última actualización:** 2026-11-24
 
 ## 1. Estado
 
@@ -14,13 +16,15 @@
 | 1 | v0 de punta a punta sin anotación: línea base corrida y reportada con un comando | cerrada (2026-11-18) |
 | 2 | Variantes de pyannote 3.1 comparadas sin referencia | cerrada (2026-11-20; escucha parcial, DEC-17) |
 | 3 | Backends de nueva generación en entornos aislados | cerrada (2026-11-20; sin escucha, DEC-17) |
-| 4 | Visualización y corrección (espectrograma + F0 + hablantes) | sin iniciar |
-| 5 | Hablantes enrolados | sin iniciar |
+| 4 | Diagnóstico, conjunto diverso, corrección en HTML y primera DER real | en curso (replanificada 2026-11-24, DEC-18 a DEC-21) |
+| 5 | Preprocesamiento adaptativo según el diagnóstico | sin iniciar |
 | 6 | Integración al pipeline | sin iniciar |
+| 7 | Hablantes enrolados (diferida) | sin iniciar |
+| 8 | Corrección con LLM local (Qwen; diferida) | sin iniciar |
 
 **Recomendación vigente (v1 provisional):** `pyannote31/auto__loudnorm`, en `eval/results/RECOMENDACION.md`. El backend por defecto no cambia (DEC-01).
 
-**Siguiente paso:** etapa 4, tarea 4.2 (visualización interactiva; ejecutor). La 4.1 quedó cubierta por la 2.3.
+**Siguiente paso:** tarea 4.2 (F0 en solapamientos; conductor). Después, 4.4 (diagnóstico; ejecutor).
 
 Casillas: `[ ]` pendiente, `[~]` implementada y en revisión, `[x]` cerrada.
 Todas las tareas de agente se implementan con el prompt A y se revisan con el
@@ -376,32 +380,109 @@ latencia, dependencias y riesgo de mantenimiento. Ref.: DIARIZATION_PLAN §4
 - [ ] **3.4** (Opcional, no se hizo) NeMo, si los anteriores no rinden en audio de cinta.
 - [x] **3.5** Cierre de la etapa 3.
 
-### Etapa 4: visualización y corrección
+### Etapa 4: diagnóstico, conjunto diverso y primera DER real
 
-**Objetivo verificable:** con un fragmento de evaluación se genera un HTML
-autocontenido, se reproduce sincronizado, se corrige un segmento y se exporta
-un RTTM que `diarization.evaluate` acepta. Ref.: DIARIZATION_PLAN §3, §5
-Fase 4.
+**Objetivo verificable:** cada fragmento tiene un reporte de degradaciones;
+el conjunto incluye grabaciones distintas del documental de `ev01` a `ev05`;
+el responsable corrige en un HTML la hipótesis de al menos 3 fragmentos de
+grabaciones distintas y el LEADERBOARD muestra la primera DER real, con su
+desglose, de la línea base y de la recomendación v1. Ref.: GUIA §11.3, §12,
+§13 Fase 0 y Fase 2.1; DEC-18 a DEC-20.
 
-- [x] **4.1** v1 estática (cubierta por la 2.3: F0 con `pyin`, espectrograma logarítmico): la v0 se hizo en la 1.8 (P-05). Aquí se pasa la F0 a
-  `pyin` (requiere aprobar `librosa`) y se ajusta lo que haya salido de la
-  revisión de la imagen de `ev01`.
-- [ ] **4.2** v1 interactiva: HTML con reproductor sincronizado, zoom, salto
-  por clic y edición de segmentos (dividir, unir, reasignar) con exportación
-  de RTTM.
-- [ ] **4.3** Cierre de la etapa 4.
+- [x] **4.1** v1 estática (cubierta por la 2.3: F0 con `pyin`, espectrograma logarítmico).
+- [ ] **4.2 F0 en solapamientos** (conductor; pedido del responsable)
+  - **Ref.:** GUIA §10; DEC-04
+  - `visualize.py` dibuja la F0 también donde hay más de un hablante activo,
+    en un color neutro (`pyin` da un solo tono por instante, no se sabe de
+    quién es), con puntos más gruesos. Regenerar con `--force` los 10
+    videos principales de `pyannote31/auto__loudnorm` (CPU local, ~10 min).
+  - **Terminado cuando:** un test sintético con dos hablantes solapados
+    dibuja F0 en el solapamiento con el color neutro; los 10 videos están
+    regenerados y el responsable los revisa; la verificación estándar sale
+    con código 0.
+- [ ] **4.3 Guía en `docs/`** (conductor): `docs/GUIA_DIARIZACION.md`,
+  citada en AGENTS.md §1 y en los Ref. Commit a pedido.
+- [ ] **4.4 Diagnóstico de degradaciones por archivo**
+  - **Depende de:** —
+  - **Ref.:** GUIA §10, §13 Fase 2.1 (tabla y boceto)
+  - **Rol:** dev-datos
+  - `python -m diarization.diagnose --manifest eval/manifest.csv [--rttm-dir
+    <dir>] --out eval/results/diagnostico/`: por fragmento, espectro
+    promedio de largo plazo (Welch) total y solo con voz, zumbido en 50 Hz y
+    armónicos (dB sobre la vecindad), frecuencia de corte, pendiente
+    300–3400 Hz (dB/octava), proporción de muestras saturadas, conteo de
+    clics, LUFS y LRA (filtro `ebur128` de ffmpeg) y SNR con la voz del RTTM.
+    Salidas: `diagnostico.csv` (versionable, sin datos sensibles) y una
+    imagen del espectro por fragmento (local).
+  - Sin dependencias nuevas: `numpy`, `scipy` (ya en el lock por `librosa`),
+    `soundfile` o `torchaudio`, y ffmpeg.
+  - **Terminado cuando:** tests sintéticos detectan un zumbido de 50 Hz
+    agregado (±1 dB del valor puesto), la saturación de un seno recortado,
+    el corte de un ruido filtrado a 4 kHz (±10 %) y no marcan nada en un
+    ruido limpio; corre sobre `ev01` a `ev05`; la verificación estándar sale
+    con código 0.
+- [ ] **4.5 Conjunto diverso** (conductor + [Responsable]; DEC-19)
+  - **Depende de:** 4.4; P-11
+  - El conductor corre el diagnóstico sobre el archivo y preselecciona unos
+    15 tramos de grabaciones distintas que cubran el rango de cada medida.
+    El responsable descarta o confirma cada uno (~10 min) e indica formato y
+    hablantes aproximados. Recorte con `diarization.fragments` como `ev06`
+    en adelante, sin nombres en el repo.
+  - **Terminado cuando:** de 5 a 10 fragmentos nuevos en el manifiesto con
+    su diagnóstico; línea base y `auto__loudnorm` corridos sobre ellos.
+- [ ] **4.6 HTML de revisión y corrección**
+  - **Depende de:** 4.2
+  - **Ref.:** DIARIZATION_PLAN §3, §5 Fase 4; GUIA §13 Fase 0; DEC-18, DEC-20
+  - **Rol:** dev-frontend
+  - `python -m diarization.review --audio <wav> --rttm <hyp.rttm> --out
+    <html>`: HTML autocontenido que abre sin internet, con espectrograma, F0
+    y franjas, reproductor sincronizado, zoom y salto por clic. Edición:
+    dividir, unir, reasignar, crear hablante, marcar `CROWD`, mover bordes.
+    Exporta RTTM que `diarization.rttm` lee. El HTML contiene audio real: va
+    a `.gitignore`.
+  - **Terminado cuando:** un test genera el HTML con audio sintético; un RTTM
+    exportado de prueba se lee sin pérdida (1 ms); el responsable corrige un
+    tramo y `evaluate` acepta el RTTM; la verificación estándar sale con
+    código 0.
+- [ ] **4.7 [Responsable] Referencias por corrección** (DEC-18)
+  - **Depende de:** 4.5, 4.6
+  - Corregir en el HTML la hipótesis de `pyannote31/auto__loudnorm` de al
+    menos 3 fragmentos de grabaciones distintas (10–15 min de audio),
+    marcando la multitud como `CROWD`. Se guardan en `eval/reference/`.
+  - **Terminado cuando:** las referencias existen y el responsable las da
+    por validadas.
+- [ ] **4.8 Primera DER real** (conductor)
+  - **Depende de:** 4.7
+  - **Ref.:** GUIA §11.3, §16; DEC-07, DEC-20
+  - `evaluate` puntúa con y sin `CROWD` (si falta la opción, tarea corta del
+    ejecutor). DER desglosada por fragmento de la línea base, la v1 y
+    `community1/auto__loudnorm`. Se anota que la referencia parte de una
+    hipótesis (sesgo a favor de `auto__loudnorm`).
+  - **Terminado cuando:** el LEADERBOARD muestra la DER con desglose y la
+    recomendación v2 se escribe en `RECOMENDACION.md`.
+- [ ] **4.9** Cierre de la etapa 4.
 
-### Etapa 5: hablantes enrolados
+### Etapa 5: preprocesamiento adaptativo
 
-**Objetivo verificable:** DER del backend `enrolled` con muestras de
-enrolamiento disjuntas de los fragmentos evaluados, comparado en el
-LEADERBOARD con el mejor backend no supervisado. Ref.: DIARIZATION_PLAN §5
-Fase 5.
+**Objetivo verificable:** una cadena fija con parámetros por archivo, sacados
+del diagnóstico, comparada paso a paso (ablation) contra la v2 con DER donde
+hay referencia y con DEC-13 donde no. Ref.: GUIA §8.4, §13 Fase 2.2, §16.
 
-- [ ] **5.1** Registro `speakers/registry.json` y cálculo de centroides
-  (sin nombres reales en el repo; ver AGENTS.md §2).
-- [ ] **5.2** Backend `enrolled` y su evaluación.
-- [ ] **5.3** Cierre de la etapa 5.
+- [ ] **5.1 Técnicas nuevas** (dev-datos): notch en 50 Hz y armónicos
+  (`bandreject` de ffmpeg, Q alto), `loudnorm23` (−23 LUFS) y EQ de canal
+  (espectro con voz contra una curva estándar de voz, ±12 dB, tercios de
+  octava, sin subir bandas sobre el corte; `firequalizer`). Tests sintéticos
+  de duración y de efecto medido con `diagnose`.
+- [ ] **5.2 `--preprocess adaptativo`** (dev-datos): reglas fijas a mano del
+  diagnóstico a los parámetros (notch solo si el zumbido supera 10 dB, EQ
+  acotado, ruido según SNR). Guarda en el registro de la corrida qué aplicó.
+- [ ] **5.3 Corridas y ablation** (conductor, `jumbita`): línea base →
+  +highpass → +notch → +EQ → +loudnorm, y cada paso quitado del completo.
+- [ ] **5.4 [Responsable]** Escucha de los desacuerdos (~10 min).
+- [ ] **5.5** (Opcional) Hiperparámetros (`clustering.threshold`,
+  `segmentation.min_duration_off`) contra DER, solo si hay referencia
+  suficiente para separar ajuste y prueba (GUIA §16).
+- [ ] **5.6** Cierre de la etapa 5 con la recomendación v3.
 
 ### Etapa 6: integración al pipeline
 
@@ -416,10 +497,39 @@ Ref.: DIARIZATION_PLAN §5 Fase 6.
 - [ ] **6.2** Flags `--diar-backend`, `--num-speakers`, `--min-speakers`,
   `--max-speakers`, `--speakers-meta`, `--diar-preprocess`,
   `--speaker-registry` en ambos scripts, sin tocar ASR ni alineación.
-- [ ] **6.3** Cambio de backend por defecto, solo si el LEADERBOARD lo
-  justifica y el responsable lo aprueba (DEC nueva).
+- [ ] **6.3** Cambio de backend o preprocesamiento por defecto, solo si el
+  LEADERBOARD lo justifica y el responsable lo aprueba (DEC nueva).
 - [ ] **6.4** `README.md` y `run_transcribe.sh` al día.
 - [ ] **6.5** Cierre de la etapa 6.
+
+### Etapa 7: hablantes enrolados (diferida)
+
+**Objetivo verificable:** DER del backend `enrolled` con muestras de
+enrolamiento disjuntas de los fragmentos evaluados, comparado con el mejor
+backend no supervisado. Ref.: DIARIZATION_PLAN §5 Fase 5; GUIA §13 Fase 3.
+
+- [ ] **7.1** Registro `speakers/registry.json` y centroides (sin nombres
+  reales en el repo; AGENTS.md §2). Muestras de 10–20 s marcadas en el HTML.
+- [ ] **7.2** Backend `enrolled` con umbral de desconocido y su evaluación.
+- [ ] **7.3** Confianza por tramo y lista de tramos dudosos para revisar en
+  el HTML (aprendizaje activo).
+- [ ] **7.4** Cierre de la etapa 7.
+
+### Etapa 8: corrección con LLM local (diferida; DEC-21)
+
+**Objetivo verificable:** un Qwen local en `jumbita` propone cambios de
+hablante solo en tramos de baja confianza acústica, y la DER con y sin la
+corrección queda en el LEADERBOARD. Ref.: GUIA §13 Fase 4, §14, §15.
+
+- [ ] **8.1** Modelo, licencia y servidor de inferencia local (aprobación del
+  responsable; GPU libres verificadas con `nvidia-smi`).
+- [ ] **8.2** Transcripción etiquetada con confianza, prompt y salida JSON a
+  RTTM corregido; umbral de confianza ajustado en dev.
+- [ ] **8.3** Cierre de la etapa 8.
+
+Más adelante, sin etapa asignada (requieren horas anotadas, GUIA §13 Fases 5
+y 6): fine-tuning con degradación simulada y banco de voces entre
+grabaciones.
 
 ## 3. Decisiones vigentes
 
@@ -502,6 +612,24 @@ Ref.: DIARIZATION_PLAN §5 Fase 6.
   y sin escucha no cambia la variante elegida. Queda `pyannote31/auto__loudnorm`
   como provisional; los tramos propuestos siguen en la bitácora por si se
   retoma.
+- **DEC-18 · Referencias por corrección.** Decidida por el responsable el
+  2026-11-24; ajusta DEC-11 y DEC-12. El responsable corrige en el HTML de
+  la 4.6 la hipótesis de al menos 3 fragmentos de grabaciones distintas; esas
+  correcciones son referencia humana (DEC-06) y habilitan la DER real. Las
+  medidas sin referencia de DEC-12 y DEC-13 siguen para los fragmentos sin
+  anotar. Toda cifra de DER indica cuántos fragmentos cubre.
+- **DEC-19 · Conjunto diverso preseleccionado por diagnóstico.** Decidida por
+  el responsable el 2026-11-24. El conductor preselecciona tramos de
+  grabaciones distintas según las medidas de `diagnose`; el responsable
+  confirma, descarta e indica formato y hablantes aproximados.
+- **DEC-20 · Multitud como `CROWD`.** Decidida por el responsable el
+  2026-11-24. En las referencias, cánticos y bullicio llevan la etiqueta
+  `CROWD`; la DER se informa con y sin esos tramos. P-10 sigue valiendo para
+  el número de hablantes en las medidas sin referencia.
+- **DEC-21 · LLM local Qwen, en las últimas etapas.** Decidida por el
+  responsable el 2026-11-24. La corrección con LLM (GUIA §13 Fase 4) usa un
+  modelo Qwen corriendo en `jumbita`, sin servicios externos (DEC-05), y
+  queda para la etapa 8. Modelo y licencia exactos se aprueban en la 8.1.
 
 
 ## 4. Preguntas abiertas
@@ -547,3 +675,8 @@ Ref.: DIARIZATION_PLAN §5 Fase 6.
   contando la multitud (cántico o bullicio) como un hablante. Coincide con
   `n_hablantes_esperado` del manifiesto, así que el acierto de las variantes
   no cambia.
+- **P-11 · Ubicación del archivo completo.** ¿En qué equipo está el archivo
+  de audio completo sobre el que corre el diagnóstico de la 4.5 (`jumbita`,
+  `kintun` o este equipo)? Necesaria para la 4.5. Respuesta del responsable
+  (2026-11-24): probablemente en este equipo; si no, en `jumbita`. El
+  conductor lo comprueba al empezar la 4.5 (en `jumbita`, solo lectura).
